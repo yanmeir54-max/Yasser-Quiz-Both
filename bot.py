@@ -1099,69 +1099,86 @@ def get_products_keyboard(category):
     keyboard.add(InlineKeyboardButton("⬅️ : العودة للمتجر", callback_data="back_to_shop"))
     return keyboard
 
-# 4️⃣ المعالج الشامل للضغطات (Callback Handler)
-@bot.callback_query_handler(func=lambda call: True)
-async def shop_master_handler(call):
+# 4️⃣ المعالج الشامل للضغطات (Callback Handler) - نسخة aiogram المحصنة
+@dp.callback_query_handler(lambda call: True)
+async def shop_master_handler(call: types.CallbackQuery):
     user_id = call.from_user.id
     data = call.data
 
-    # حارس البعسسة
+    # حارس البعسسة: التأكد أن الضاغط هو صاحب الأمر الأصلي
+    # ملاحظة: نستخدم call.message.reply_to_message للتحقق
     if call.message.reply_to_message and call.message.reply_to_message.from_user.id != user_id:
-        return await bot.answer_callback_query(call.id, "🚫 : المتجر ليس لك!", show_alert=True)
+        return await call.answer("🚫 : المتجر ليس لك! افتح متجرك الخاص.", show_alert=True)
 
-    # فتح قسم معين
+    # --- [ فتح قسم معين ] ---
     if data.startswith("open_cat_"):
         cat = data.replace("open_cat_", "")
-        await bot.edit_message_reply_markup(
-            call.message.chat.id, call.message.message_id, 
-            reply_markup=get_products_keyboard(cat)
-        )
-        await bot.answer_callback_query(call.id, "📂 : تم فتح القسم")
+        try:
+            await call.message.edit_reply_markup(reply_markup=get_products_keyboard(cat))
+            await call.answer("📂 : تم فتح القسم")
+        except:
+            await call.answer("⚠️ : القسم فارغ حالياً")
 
-    # العودة للمتجر الرئيسي
+    # --- [ العودة للمتجر الرئيسي ] ---
     elif data == "back_to_shop":
-        await bot.edit_message_reply_markup(
-            call.message.chat.id, call.message.message_id, 
-            reply_markup=get_shop_main_keyboard()
-        )
+        await call.message.edit_reply_markup(reply_markup=get_shop_main_keyboard())
+        await call.answer("🔙 : عدنا للمتجر")
 
-    # عملية الشراء الفعلية
+    # --- [ عملية الشراء الفعلية ] ---
     elif data.startswith("buy_item_"):
-        parts = data.split("_") # buy_item_id_category
-        item_id, cat = parts[2], parts[3]
-        item_info = ITEMS_DB[cat][item_id]
+        # تنسيق البيانات المتوقع: buy_item_ID_CATEGORY
+        parts = data.split("_")
+        if len(parts) < 4: return
+        
+        item_id = parts[2]
+        cat = parts[3]
+        item_info = ITEMS_DB.get(cat, {}).get(item_id)
+
+        if not item_info:
+            return await call.answer("❌ : هذا الصنف غير متاح حالياً")
 
         try:
-            # جلب بيانات المستخدم
+            # جلب بيانات المستخدم من سوبابيس
             res = supabase.table("users_global_profile").select("*").eq("user_id", user_id).execute()
+            if not res.data:
+                return await call.answer("❌ : ليس لديك حساب مسجل!", show_alert=True)
+                
             u_data = res.data[0]
-            if u_data['wallet'] < item_info['price']:
-                return await bot.answer_callback_query(call.id, "⚠️ : رصيدك لا يكفي!", show_alert=True)
+            current_wallet = u_data.get('wallet', 0)
+
+            # التحقق من الرصيد
+            if current_wallet < item_info['price']:
+                return await call.answer(f"⚠️ : رصيدك ({current_wallet}) لا يكفي!", show_alert=True)
 
             # تحديث المحفظة والمقتنيات
             new_inv = u_data.get('inventory') or []
             new_inv.append(item_info['name'])
             
             supabase.table("users_global_profile").update({
-                "wallet": u_data['wallet'] - item_info['price'],
+                "wallet": current_wallet - item_info['price'],
                 "inventory": new_inv
             }).eq("user_id", user_id).execute()
 
-            await bot.answer_callback_query(call.id, f"✅ : مبروك شراء {item_info['name']}", show_alert=True)
-            # تحديث النص لإظهار الرصيد الجديد
-            await bot.edit_message_text(
-                await format_shop_bazaar_card(u_data['wallet'] - item_info['price']),
-                call.message.chat.id, call.message.message_id, 
-                parse_mode="HTML", reply_markup=get_products_keyboard(cat)
-            )
+            await call.answer(f"✅ : مبروك شراء {item_info['name']}", show_alert=True)
+            
+            # تحديث نص الرسالة بالرصيد الجديد
+            new_text = await format_shop_bazaar_card(current_wallet - item_info['price'])
+            await call.message.edit_text(new_text, parse_mode="HTML", reply_markup=get_products_keyboard(cat))
+            
         except Exception as e:
-            await bot.answer_callback_query(call.id, "❌ : عطل فني!")
+            import logging
+            logging.error(f"Error in purchase: {e}")
+            await call.answer("❌ : حدث خطأ أثناء المعاملة!")
 
+    # --- [ زر الإغلاق ] ---
     elif data == "close_card":
-        await bot.delete_message(call.message.chat.id, call.message.message_id)
-        
+        try:
+            await call.message.delete()
+        except:
+            await call.answer("❌ : لا يمكن حذف هذه الرسالة")
+
 # --- [ أمر فتح المتجر بالعربي ] ---
-@dp.message_handler(commands=['متجر', 'سوق', 'بزار']) # أوامر بالسلاش
+@dp.message_handler(commands=['متجر', 'سوق', 'دكان']) # أوامر بالسلاش
 @dp.message_handler(lambda message: message.text in ["متجر", "سوق", "بزار", "المتجر"]) # كلمات مباشرة
 async def open_global_shop(message: types.Message):
     """
