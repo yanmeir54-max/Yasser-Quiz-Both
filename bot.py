@@ -1232,7 +1232,7 @@ async def control_panel(message: types.Message):
     await message.answer(txt, reply_markup=get_main_control_kb(user_id), parse_mode="HTML")
 
 # التعديل في السطر 330 (أضفنا close_bot_)
-@dp.callback_query_handler(lambda c: c.data.startswith(('custom_add_', 'dev_', 'setup_quiz_', 'close_bot_', 'back_')), state="*")
+@dp.callback_query_handler(lambda c: c.data.startswith(('custom_add_', 'dev_', 'setup_quiz_', 'close_bot_', 'back_', 'open_shop_')), state="*")
 async def handle_control_buttons(c: types.CallbackQuery, state: FSMContext):
     data_parts = c.data.split('_')
     action = data_parts[0] 
