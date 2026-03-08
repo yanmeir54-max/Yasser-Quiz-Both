@@ -1161,7 +1161,7 @@ async def shop_navigation_handler(call: types.CallbackQuery):
 
     except Exception as e:
         print(f"Error: {e}")
-        await call.answer("⚠️ : حدث خطأ في التنقل")call.message.reply_to_message.from_user.id
+        await call.answer("⚠️ : حدث خطأ في التنقل")
 
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith('cancel_quiz_'))
