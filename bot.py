@@ -1122,7 +1122,47 @@ async def welcome_bot_to_group(message: types.Message):
             except:
                 # في حال لم تضع الآيدي بعد أو حدث خطأ، يرسل نصاً فقط
                 await message.answer(welcome_text, reply_markup=kb_welcome, parse_mode="HTML")
+
 # ==========================================
+# --- [ 4. محرك التنقل داخل المتجر ] ---
+# عدلنا الفلتر ليدعم الصيغة الجديدة (cat_ و back_shop_)
+@dp.callback_query_handler(lambda c: c.data.startswith(('cat_', 'back_shop_', 'open_cat_')) or c.data == 'back_to_shop')
+async def shop_navigation_handler(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    data = call.data
+    
+    # تقسيم البيانات (مثلاً: cat_royal_12345)
+    parts = data.split('_')
+    action = parts[0] # cat أو back
+    
+    # 🛡️ حارس البعسسة
+    if call.message.reply_to_message and call.message.reply_to_message.from_user.id != user_id:
+        return await call.answer("🚫 : اللوحة ليست لك!", show_alert=True)
+
+    try:
+        # 1. فتح قسم (مثل cat_royal)
+        if action == "cat" or action == "open":
+            category = parts[1] if action == "cat" else data.replace("open_cat_", "")
+            await call.message.edit_reply_markup(reply_markup=get_products_keyboard(category, user_id))
+            await call.answer(f"📂 : قسم {category}")
+
+        # 2. العودة لواجهة المتجر (back_shop)
+        elif action == "back" and "shop" in data:
+            # جلب الرصيد من سوبابيس لإعادة عرضه
+            res = supabase.table("users_global_profile").select("wallet").eq("user_id", user_id).execute()
+            wallet = res.data[0]['wallet'] if res.data else 0
+            
+            await call.message.edit_text(
+                await format_shop_bazaar_card(wallet),
+                reply_markup=get_shop_main_keyboard(user_id),
+                parse_mode="HTML"
+            )
+            await call.answer("🔙 : عدنا")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        await call.answer("⚠️ : حدث خطأ في التنقل")call.message.reply_to_message.from_user.id
+
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith('cancel_quiz_'))
 async def cancel_quiz_handler(c: types.CallbackQuery):
@@ -1130,6 +1170,7 @@ async def cancel_quiz_handler(c: types.CallbackQuery):
     cancelled_groups.add(chat_id)
     await c.message.edit_text("🚫 **تم إلغاء المسابقة في هذه المجموعة.**")
     await c.answer("تم الإلغاء بنجاح", show_alert=True)
+
 # ==========================================
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
@@ -1202,7 +1243,6 @@ async def cmd_transfer(message: types.Message):
     # تنفيذ التحويل
     response = await process_bank_transfer(message.from_user.id, amount, receiver_acc)
     await message.answer(response, parse_mode="HTML")
-
 
 # ==========================================
 # 2. تعديل أمر "تحكم" لضمان عدم العمل إلا بعد التفعيل
@@ -3073,6 +3113,7 @@ def get_main_admin_kb():
     kb.row(InlineKeyboardButton("🔑 استبدال توكين البوت", callback_data="admin_change_token"))
     kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
     return kb
+
 # --- 1. معالج الأمر الرئيسي /admin (المعدل للنظام الموحد) ---
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
