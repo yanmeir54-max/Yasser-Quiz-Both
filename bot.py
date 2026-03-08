@@ -994,43 +994,26 @@ async def format_shop_bazaar_card(user_wallet: int):
     msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n"
     msg += "✅ : اختر القسم الذي ترغب بتصفحه بالأسفل"
     return msg
-
-# --- [ 3. دوال الأزرار (Keyboards) ] ---
-def get_shop_main_keyboard():
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data="open_cat_royal"),
-        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data="open_cat_girls")
-    )
-    keyboard.add(
-        InlineKeyboardButton("💐 : الورود والهدايا", callback_data="open_cat_gifts"),
-        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data="open_cat_rare")
-    )
-    keyboard.add(
-        InlineKeyboardButton("🃏 : كروت اللعب", callback_data="open_cat_cards"),
-        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data="close_card")
-    )
-    return keyboard
-# --- [ 3. دوال الأزرار (Keyboards) المحدثة بالحماية ] ---
+# --- [ 3. دوال الأزرار (Keyboards) المنسقة ] ---
 def get_shop_main_keyboard(user_id):
     keyboard = InlineKeyboardMarkup(row_width=2)
     
-    # ربطنا كل قسم بآيدي المستخدم لضمان الأمان في الخطوات القادمة
+    # استخدمنا open_cat_ لكي يقرأها المعالج مباشرة
+    # وأضفنا _ID في النهاية لحماية "البعسسة"
     keyboard.add(
-        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data=f"cat_royal_{user_id}"),
-        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data=f"cat_girls_{user_id}")
+        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data=f"open_cat_royal_{user_id}"),
+        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data=f"open_cat_girls_{user_id}")
     )
     keyboard.add(
-        InlineKeyboardButton("💐 : الورود والهدايا", callback_data=f"cat_gifts_{user_id}"),
-        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data=f"cat_rare_{user_id}")
+        InlineKeyboardButton("💐 : الورود والهدايا", callback_data=f"open_cat_gifts_{user_id}"),
+        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data=f"open_cat_rare_{user_id}")
     )
     keyboard.add(
-        InlineKeyboardButton("🃏 : كروت اللعب", callback_data=f"cat_cards_{user_id}"),
-        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data=f"close_bot_{user_id}") # استخدمنا نفس زر الإغلاق لتوحيد الكود
+        InlineKeyboardButton("🃏 : كروت اللعب", callback_data=f"open_cat_cards_{user_id}"),
+        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data=f"close_card_{user_id}")
     )
     
     return keyboard
-    
 # ==========================================
 # 4. حالات النظام (FSM States)
 # ==========================================
@@ -1041,7 +1024,6 @@ class Form(StatesGroup):
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
     waiting_for_quiz_name = State()
-
 # --- [ 2. مفاتيح الهاندلرز - Handlers ] ---
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
 @dp.message_handler(lambda m: m.text in ["عني", "رتبتي", "نقاطي", "محفظتي", "بروفايلي"])
@@ -1124,45 +1106,48 @@ async def welcome_bot_to_group(message: types.Message):
                 await message.answer(welcome_text, reply_markup=kb_welcome, parse_mode="HTML")
 
 # ==========================================
-# --- [ 4. محرك التنقل داخل المتجر ] ---
-# عدلنا الفلتر ليدعم الصيغة الجديدة (cat_ و back_shop_)
-@dp.callback_query_handler(lambda c: c.data.startswith(('cat_', 'back_shop_', 'open_cat_')) or c.data == 'back_to_shop')
+# --- [ 4. محرك التنقل المنسق والمحمي ] ---
+@dp.callback_query_handler(lambda c: c.data.startswith(('open_cat_', 'back_to_shop_', 'close_card_')), state="*")
 async def shop_navigation_handler(call: types.CallbackQuery):
+    # بيانات الزر (مثال: open_cat_royal_12345)
+    data_parts = call.data.split('_')
+    # الجزء الأخير دائماً هو الآيدي صاحب المتجر
+    owner_id = int(data_parts[-1]) 
     user_id = call.from_user.id
-    data = call.data
-    
-    # تقسيم البيانات (مثلاً: cat_royal_12345)
-    parts = data.split('_')
-    action = parts[0] # cat أو back
-    
-    # 🛡️ حارس البعسسة
-    if call.message.reply_to_message and call.message.reply_to_message.from_user.id != user_id:
-        return await call.answer("🚫 : اللوحة ليست لك!", show_alert=True)
+
+    # 🛡️ حارس البعسسة: فحص الآيدي المشفر في الزر
+    if user_id != owner_id:
+        return await call.answer("🚫 : المتجر ليس لك يا شريك!", show_alert=True)
 
     try:
-        # 1. فتح قسم (مثل cat_royal)
-        if action == "cat" or action == "open":
-            category = parts[1] if action == "cat" else data.replace("open_cat_", "")
-            await call.message.edit_reply_markup(reply_markup=get_products_keyboard(category, user_id))
-            await call.answer(f"📂 : قسم {category}")
+        # أ. إغلاق المتجر (يبدأ بـ close_card)
+        if "close_card" in call.data:
+            await call.message.delete()
+            await call.answer("✅ : تم إغلاق المتجر")
 
-        # 2. العودة لواجهة المتجر (back_shop)
-        elif action == "back" and "shop" in data:
-            # جلب الرصيد من سوبابيس لإعادة عرضه
-            res = supabase.table("users_global_profile").select("wallet").eq("user_id", user_id).execute()
-            wallet = res.data[0]['wallet'] if res.data else 0
+        # ب. العودة للقائمة الرئيسية
+        elif "back_to_shop" in call.data:
+            await call.message.edit_reply_markup(reply_markup=get_shop_main_keyboard(owner_id))
+            await call.answer("🔙 : العودة للقائمة الرئيسية")
+
+        # ج. فتح قسم محدد (الملكية، البنات، إلخ)
+        elif "open_cat_" in call.data:
+            # استخراج اسم القسم (يكون العضو الثالث في المصفوفة: open, cat, [category], ID)
+            category = data_parts[2] 
             
-            await call.message.edit_text(
-                await format_shop_bazaar_card(wallet),
-                reply_markup=get_shop_main_keyboard(user_id),
-                parse_mode="HTML"
-            )
-            await call.answer("🔙 : عدنا")
+            if category in ITEMS_DB:
+                # نمرر owner_id لدالة المنتجات أيضاً للحماية
+                await call.message.edit_reply_markup(reply_markup=get_products_keyboard(category, owner_id))
+                await call.answer(f"📂 : تم فتح قسم {category}")
+            elif category == "cards":
+                await call.answer("🃏 : قسم الكروت قيد التجهيز!", show_alert=True)
+            else:
+                await call.answer("⚠️ : القسم غير متوفر")
 
     except Exception as e:
-        print(f"Error: {e}")
-        await call.answer("⚠️ : حدث خطأ في التنقل")
-
+        import logging
+        logging.error(f"Error in Shop Navigation: {e}")
+        await call.answer("❌ : حدث خطأ أثناء التنقل!")
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith('cancel_quiz_'))
 async def cancel_quiz_handler(c: types.CallbackQuery):
@@ -1170,7 +1155,6 @@ async def cancel_quiz_handler(c: types.CallbackQuery):
     cancelled_groups.add(chat_id)
     await c.message.edit_text("🚫 **تم إلغاء المسابقة في هذه المجموعة.**")
     await c.answer("تم الإلغاء بنجاح", show_alert=True)
-
 # ==========================================
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
@@ -1243,7 +1227,6 @@ async def cmd_transfer(message: types.Message):
     # تنفيذ التحويل
     response = await process_bank_transfer(message.from_user.id, amount, receiver_acc)
     await message.answer(response, parse_mode="HTML")
-
 # ==========================================
 # 2. تعديل أمر "تحكم" لضمان عدم العمل إلا بعد التفعيل
 # ==========================================
@@ -1535,7 +1518,6 @@ async def save_edited_category(message: types.Message, state: FSMContext):
     # الاستدعاء الذكي: نرسل رسالة جديدة (is_edit=False) لأننا حذفنا رسالة المستخدم
     # ونعرض لوحة الإعدادات بالاسم الجديد فوراً
     await show_category_settings_ui(message, cat_id, owner_id, is_edit=False)
-
 # ==========================================
 # --- 3. نظام إضافة سؤال (محمي ومنظم) ---
 # ==========================================
@@ -1649,7 +1631,6 @@ async def finalize_no_second(c: types.CallbackQuery, state: FSMContext):
 # ==========================================
 # --- 5. نظام عرض الأسئلة (المحمي بآيدي صاحب القسم) ---
 # ==========================================
-
 @dp.callback_query_handler(lambda c: c.data.startswith('view_qs_'), state="*")
 async def view_questions(c: types.CallbackQuery):
     # تفكيك البيانات: view_qs_CATID_OWNERID
@@ -1889,7 +1870,8 @@ async def start_private_selection(c: types.CallbackQuery, state: FSMContext):
     await state.update_data(eligible_cats=res.data, selected_cats=[], is_bot_quiz=False, current_owner_id=owner_id) 
     await render_categories_list(c.message, res.data, [], owner_id)
 
-# --- [ أسئلة الأعضاء: إظهار الأسماء بدلاً من الأرقام ] ---
+
+    # --- [ أسئلة الأعضاء: إظهار الأسماء بدلاً من الأرقام ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('members_setup_step1_'), state="*")
 async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
     owner_id = int(c.data.split('_')[-1])
@@ -1913,12 +1895,9 @@ async def start_member_selection(c: types.CallbackQuery, state: FSMContext):
     
     await state.update_data(eligible_list=eligible_list, selected_members=[], is_bot_quiz=False, current_owner_id=owner_id)
     await render_members_list(c.message, eligible_list, [], owner_id)
-
 # ==========================================
 # 2. معالجات التبديل والاختيار (Toggle & Go) - نسخة المجلدات المحدثة
 # ==========================================
-
-# --- [ 1. معالج تبديل المجلدات (Folders Toggle) ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('toggle_folder_'), state="*")
 async def toggle_folder_selection(c: types.CallbackQuery, state: FSMContext):
     data_parts = c.data.split('_')
@@ -1940,7 +1919,7 @@ async def toggle_folder_selection(c: types.CallbackQuery, state: FSMContext):
     # استدعاء دالة رندر المجلدات لتحديث الشكل
     await render_folders_list(c.message, eligible, selected, owner_id)
 
-# --- [ 2. معالج الانتقال من المجلدات إلى الأقسام ] ---
+ # --- [ 2. معالج الانتقال من المجلدات إلى الأقسام ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_folders_'), state="*")
 async def confirm_folders_to_cats(c: types.CallbackQuery, state: FSMContext):
     owner_id = int(c.data.split('_')[-1])
@@ -2546,6 +2525,8 @@ async def delete_after(message, delay):
         await message.delete()
     except Exception: 
         pass
+
+
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
@@ -3092,16 +3073,16 @@ async def unified_answer_checker(m: types.Message):
                         # ملاحظة: المحرك run_universal_logic هو من سيظهر قالب النتائج 2 
                         # فور استشعار أن active أصبحت False
                     return
+
 # ==========================================
 # --- [ إعداد حالات الإدارة ] ---
 class AdminStates(StatesGroup):
     waiting_for_new_token = State()
     waiting_for_broadcast = State()
-
 # =========================================
 #          👑 غرفة عمليات المطور 👑
 # =========================================
-# دالة موحدة لتوليد لوحة الأزرار المحدثة (لضمان ظهورها في كل الحالات)
+
 def get_main_admin_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
