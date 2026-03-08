@@ -492,11 +492,13 @@ def get_main_control_kb(user_id):
     kb = InlineKeyboardMarkup(row_width=2).add(
         InlineKeyboardButton("📝 إضافة خاصة", callback_data=f"custom_add_{user_id}"),
         InlineKeyboardButton("📅 جلسة سابقة", callback_data=f"dev_session_{user_id}"),
+        InlineKeyboardButton("🛒 المتجر العالمي", callback_data=f"open_shop_{user_id}"), # زر المتجر الجديد
         InlineKeyboardButton("🏆 تجهيز مسابقة", callback_data=f"setup_quiz_{user_id}"),
         InlineKeyboardButton("📊 لوحة الصدارة", callback_data=f"dev_leaderboard_{user_id}"),
         InlineKeyboardButton("🛑 إغلاق", callback_data=f"close_bot_{user_id}")
     )
     return kb
+
 
 # 3️⃣ [ دالة عرض القائمة الرئيسية للأقسام ]
 async def custom_add_menu(c, owner_id, state):
