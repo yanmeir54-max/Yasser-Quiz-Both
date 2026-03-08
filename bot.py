@@ -890,12 +890,13 @@ async def format_profile_card(user_data: dict, user_id: int):
 # 1️⃣ دالة لوحة الأزرار (Keyboard)
 def get_profile_keyboard():
     """تجهيز لوحة الأزرار الموحدة لبطاقة البروفايل"""
-    
+    keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
        InlineKeyboardButton("🛒 : المتجر العالمي", callback_data="open_cat_cards"), # يفتح الكروت مثلاً
        InlineKeyboardButton("❌ : إغلاق", callback_data="close_card")
     )
     return
+
 # ========================================
 async def process_bank_transfer(sender_id, amount, receiver_acc):
     """معالجة عملية التحويل البنكي"""
