@@ -1109,52 +1109,44 @@ async def welcome_bot_to_group(message: types.Message):
 # --- [ 4. محرك التنقل المنسق والمحمي ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith(('open_cat_', 'back_to_shop_', 'close_card_')), state="*")
 async def shop_navigation_handler(call: types.CallbackQuery):
-    # بيانات الزر (مثال: open_cat_royal_12345)
-    data_parts = call.data.split('_')
-    # الجزء الأخير دائماً هو الآيدي صاحب المتجر
-    owner_id = int(data_parts[-1]) 
+    data = call.data
     user_id = call.from_user.id
+    
+    # تقسيم البيانات بدقة
+    # إذا كانت: open_cat_royal_123456
+    # فالتقسيم سيكون: ['open', 'cat', 'royal', '123456']
+    parts = data.split('_')
+    owner_id = int(parts[-1]) # الأخير دائماً هو الآيدي
 
-    # 🛡️ حارس البعسسة: فحص الآيدي المشفر في الزر
+    # 🛡️ حارس البعسسة
     if user_id != owner_id:
-        return await call.answer("🚫 : المتجر ليس لك يا شريك!", show_alert=True)
+        return await call.answer("🚫 : المتجر ليس لك!", show_alert=True)
 
     try:
-        # أ. إغلاق المتجر (يبدأ بـ close_card)
-        if "close_card" in call.data:
+        # 1. إغلاق المتجر
+        if "close_card" in data:
             await call.message.delete()
-            await call.answer("✅ : تم إغلاق المتجر")
 
-        # ب. العودة للقائمة الرئيسية
-        elif "back_to_shop" in call.data:
+        # 2. العودة للقائمة الرئيسية للمتجر
+        elif "back_to_shop" in data:
             await call.message.edit_reply_markup(reply_markup=get_shop_main_keyboard(owner_id))
-            await call.answer("🔙 : العودة للقائمة الرئيسية")
+            await call.answer("🔙 : القائمة الرئيسية")
 
-        # ج. فتح قسم محدد (الملكية، البنات، إلخ)
-        elif "open_cat_" in call.data:
-            # استخراج اسم القسم (يكون العضو الثالث في المصفوفة: open, cat, [category], ID)
-            category = data_parts[2] 
+        # 3. فتح قسم (الملكية، البنات، إلخ)
+        elif "open_cat_" in data:
+            # نأخذ العضو الثالث في المصفوفة وهو اسم القسم
+            category = parts[2] 
             
-            if category in ITEMS_DB:
-                # نمرر owner_id لدالة المنتجات أيضاً للحماية
-                await call.message.edit_reply_markup(reply_markup=get_products_keyboard(category, owner_id))
-                await call.answer(f"📂 : تم فتح قسم {category}")
-            elif category == "cards":
-                await call.answer("🃏 : قسم الكروت قيد التجهيز!", show_alert=True)
-            else:
-                await call.answer("⚠️ : القسم غير متوفر")
+            # استدعاء دالة المنتجات (تأكد أنها تقبل متغيرين: القسم والآيدي)
+            kb = get_products_keyboard(category, owner_id)
+            await call.message.edit_reply_markup(reply_markup=kb)
+            await call.answer(f"📂 : قسم {category}")
 
     except Exception as e:
         import logging
-        logging.error(f"Error in Shop Navigation: {e}")
-        await call.answer("❌ : حدث خطأ أثناء التنقل!")
-# ==========================================
-@dp.callback_query_handler(lambda c: c.data.startswith('cancel_quiz_'))
-async def cancel_quiz_handler(c: types.CallbackQuery):
-    chat_id = c.message.chat.id
-    cancelled_groups.add(chat_id)
-    await c.message.edit_text("🚫 **تم إلغاء المسابقة في هذه المجموعة.**")
-    await c.answer("تم الإلغاء بنجاح", show_alert=True)
+        logging.error(f"Shop Error: {e}")
+        # إذا حصل خطأ، سنطبع السبب الحقيقي في الكونسول لنعرفه
+        await call.answer(f"❌ : خطأ برمي: {e}")
 # ==========================================
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
