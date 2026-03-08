@@ -1267,6 +1267,26 @@ async def handle_control_buttons(c: types.CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
 
+    # 5️⃣ [ زر المتجر العالمي ] 🛒
+    elif action == "open" and "shop" in data_parts:
+        await c.answer("💰 جاري فتح المتجر الملكي...")
+        
+        # 1. جلب رصيد المستخدم من سوبابيس (لإظهاره في النص)
+        try:
+            res = supabase.table("users_global_profile").select("wallet").eq("user_id", owner_id).execute()
+            wallet = res.data[0]['wallet'] if res.data else 0
+        except Exception as e:
+            wallet = 0 # في حال حدوث خطأ نعتبر الرصيد 0 مؤقتاً
+            
+        # 2. تجهيز النص الفخم للمتجر
+        shop_text = await format_shop_bazaar_card(wallet)
+        
+        # 3. تعديل الرسالة الحالية لتصبح واجهة المتجر
+        return await c.message.edit_text(
+            shop_text,
+            reply_markup=get_shop_main_keyboard(), # دالة الأقسام التي صممناها
+            parse_mode="HTML"
+        )
 # --- [ 4. محرك التنقل بين أقسام المتجر ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('open_cat_') or c.data in ['back_to_shop', 'close_card'])
 async def shop_navigation_handler(call: types.CallbackQuery):
