@@ -944,8 +944,8 @@ ITEMS_DB = {
         "noble": {"name": "💎 النبيل", "price": 5500},
         "sultan": {"name": "⚜️ سلطان الحرف", "price": 12000},
         "wise": {"name": "📜 الحكيم", "price": 3500},
-        "knight": {"name": "🛡️ فارس الكلمة", "price": 4500},
-        "leader": {"name": "🚩 القائد", "price": 10000}
+        "knight": {"name": "🛡️فارس الكلمة", "price": 4500},
+        "leader": {"name": "🚩القائد", "price": 10000}
     },
     "girls": {
         "princess": {"name": "🌸 أميرة الحرف", "price": 4000},
@@ -962,21 +962,29 @@ ITEMS_DB = {
         "rose_red": {"name": "🌹 باقة ورد أحمر", "price": 1000},
         "tulip": {"name": "🌷 زهرة التوليب", "price": 1200},
         "bouquet": {"name": "💐 الباقة الملكية", "price": 5000},
-        "sunflower": {"name": "🌻 إشراقة أمل", "price": 1500},
+        "sunflower": {"name": "🌻إشراقة أمل", "price": 1500},
         "jasmine": {"name": "⚪ ياسمين الشام", "price": 1100},
         "choc": {"name": "🍫 صندوق شوكولا", "price": 2000},
         "gift_b": {"name": "🎁 صندوق المفاجآت", "price": 3000},
         "ring": {"name": "💍 خاتم الألماس", "price": 20000}
     },
+    "cards": {
+        "hint_letter": {"name": "🔍 إظهار حرف", "price": 1500},
+        "hint_full": {"name": "💡 التلميح", "price": 3000},
+        "add_time": {"name": "⏱️ زيادة الوقت", "price": 2500},
+        "reveal_ans": {"name": "🎯 كشف الإجابة", "price": 10000},
+        "double_coin": {"name": "💰 مضاعفة المبلغ x2", "price": 7000},
+        "shield_up": {"name": "🛡️الحماية من الخصم", "price": 5000}
+    },
     "rare": {
         "crown": {"name": "🏅 تاج الذكاء", "price": 10000},
         "sword": {"name": "⚔️ سيف القنص", "price": 7000},
-        "eagle": {"name": "🦅 الصقر الجارح", "price": 13000},
-        "lamp": {"name": "🪔 مصباح علاء الدين", "price": 18000},
-        "trophy": {"name": "🏆 كأس العالم", "price": 25000},
-        "dragon": {"name": "🐲 التنين الأسطوري", "price": 50000},
-        "phoenix": {"name": "🐦 طائر الفينيق", "price": 30000},
-        "throne": {"name": "🪑 عرش المعرفة", "price": 100000}
+        "eagle": {"name": "🦅الصقر الجارح", "price": 13000},
+        "lamp": {"name": "🪔مصباح علاء الدين", "price": 18000},
+        "trophy": {"name": "🏆كأس العالم", "price": 25000},
+        "dragon": {"name": "🐲التنين الأسطوري", "price": 50000},
+        "phoenix": {"name": "🐦طائر الفينيق", "price": 30000},
+        "throne": {"name": "🪑عرش المعرفة", "price": 100000}
     }
 }
 
@@ -985,7 +993,7 @@ async def format_shop_bazaar_card(user_wallet: int):
     """تجهيز القالب النصي الفخم للمتجر"""
     msg =  "<b>       🛒 : الـمـتـجـر الـعـالـمـي الـكـبـيـر 🛒</b>\n"
     msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n"
-    msg += f"💰 <b>: رصيدك الحالي ⇠ <code>{user_wallet}</code> ن</b>\n"
+    msg += f"💰: <b>: رصيدك الحالي ⇠ <code>{user_wallet}</code> نقطة</b>\n"
     msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n\n"
     msg += "<b>🔹 : تصفح الأقسام عبر الأزرار :</b>\n"
     msg += "👑 ⇠ ألقاب ملكية | 🌸 ⇠ ألقاب بناتي\n"
