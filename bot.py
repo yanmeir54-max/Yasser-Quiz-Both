@@ -931,6 +931,97 @@ async def process_bank_transfer(sender_id, amount, receiver_acc):
         logging.error(f"Transfer Error: {e}")
         return "⚠️ حدث خطأ أثناء معالجة التحويل."
 
+# --- [ 1. قاعدة بيانات الأصناف ] ---
+# وضعناها هنا لتكون مرجعاً ثابتاً لكل العمليات
+ITEMS_DB = {
+    "royal": {
+        "legend": {"name": "✨ الأسطورة", "price": 5000},
+        "king": {"name": "👑 ملك المعرفة", "price": 15000},
+        "scholar": {"name": "📚 المحقق العلامة", "price": 4000},
+        "genius": {"name": "🧠 العبقري الفذ", "price": 7000},
+        "noble": {"name": "💎 النبيل", "price": 5500},
+        "sultan": {"name": "⚜️ سلطان الحرف", "price": 12000},
+        "wise": {"name": "📜 الحكيم", "price": 3500},
+        "knight": {"name": "🛡️ فارس الكلمة", "price": 4500},
+        "leader": {"name": "🚩 القائد", "price": 10000}
+    },
+    "girls": {
+        "princess": {"name": "🌸 أميرة الحرف", "price": 4000},
+        "rare": {"name": "💎 نادرة الوجود", "price": 6000},
+        "queen": {"name": "👑 الملكة", "price": 15000},
+        "rose_t": {"name": "🌹 وردة المجموعة", "price": 3000},
+        "pearl": {"name": "🐚 لؤلؤة النقاء", "price": 5500},
+        "moon": {"name": "🌙 قمر الزمان", "price": 7000},
+        "butterfly": {"name": "🦋 الفراشة", "price": 2500},
+        "diamond": {"name": "💠 الماسة", "price": 12000},
+        "melody": {"name": "🎶 لحن الوفاء", "price": 5000}
+    },
+    "gifts": {
+        "rose_red": {"name": "🌹 باقة ورد أحمر", "price": 1000},
+        "tulip": {"name": "🌷 زهرة التوليب", "price": 1200},
+        "bouquet": {"name": "💐 الباقة الملكية", "price": 5000},
+        "sunflower": {"name": "🌻 إشراقة أمل", "price": 1500},
+        "jasmine": {"name": "⚪ ياسمين الشام", "price": 1100},
+        "choc": {"name": "🍫 صندوق شوكولا", "price": 2000},
+        "gift_b": {"name": "🎁 صندوق المفاجآت", "price": 3000},
+        "ring": {"name": "💍 خاتم الألماس", "price": 20000}
+    },
+    "rare": {
+        "crown": {"name": "🏅 تاج الذكاء", "price": 10000},
+        "sword": {"name": "⚔️ سيف القنص", "price": 7000},
+        "eagle": {"name": "🦅 الصقر الجارح", "price": 13000},
+        "lamp": {"name": "🪔 مصباح علاء الدين", "price": 18000},
+        "trophy": {"name": "🏆 كأس العالم", "price": 25000},
+        "dragon": {"name": "🐲 التنين الأسطوري", "price": 50000},
+        "phoenix": {"name": "🐦 طائر الفينيق", "price": 30000},
+        "throne": {"name": "🪑 عرش المعرفة", "price": 100000}
+    }
+}
+
+# --- [ 2. دالة تنسيق واجهة المتجر ] ---
+async def format_shop_bazaar_card(user_wallet: int):
+    """تجهيز القالب النصي الفخم للمتجر"""
+    msg =  "<b>       🛒 : الـمـتـجـر الـعـالـمـي الـكـبـيـر 🛒</b>\n"
+    msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n"
+    msg += f"💰 <b>: رصيدك الحالي ⇠ <code>{user_wallet}</code> ن</b>\n"
+    msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n\n"
+    msg += "<b>🔹 : تصفح الأقسام عبر الأزرار :</b>\n"
+    msg += "👑 ⇠ ألقاب ملكية | 🌸 ⇠ ألقاب بناتي\n"
+    msg += "💐 ⇠ هدايا وورود | ⚔️ ⇠ مقتنيات نادرة\n"
+    msg += "🃏 ⇠ كروت مساعدة\n\n"
+    msg += "<b>━━━━━━━━━━━━━━━━━━</b>\n"
+    msg += "✅ : اختر القسم الذي ترغب بتصفحه بالأسفل"
+    return msg
+
+# --- [ 3. دوال الأزرار (Keyboards) ] ---
+def get_shop_main_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data="open_cat_royal"),
+        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data="open_cat_girls")
+    )
+    keyboard.add(
+        InlineKeyboardButton("💐 : الورود والهدايا", callback_data="open_cat_gifts"),
+        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data="open_cat_rare")
+    )
+    keyboard.add(
+        InlineKeyboardButton("🃏 : كروت اللعب", callback_data="open_cat_cards"),
+        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data="close_card")
+    )
+    return keyboard
+
+def get_products_keyboard(category):
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    products = ITEMS_DB.get(category, {})
+    
+    for p_id, p_info in products.items():
+        # دمجنا الاسم والسعر في زر واحد
+        btn_text = f"{p_info['name']} | {p_info['price']}ن"
+        keyboard.insert(InlineKeyboardButton(btn_text, callback_data=f"buy_item_{p_id}_{category}"))
+    
+    keyboard.add(InlineKeyboardButton("⬅️ : العودة للمتجر", callback_data="back_to_shop"))
+    return keyboard
+    
 # ==========================================
 # 4. حالات النظام (FSM States)
 # ==========================================
@@ -978,117 +1069,6 @@ async def cmd_show_profile_global(message: types.Message):
         await message.answer_photo(photo_id, caption=profile_text, parse_mode="HTML", reply_markup=keyboard)
     else:
         await message.answer(profile_text, parse_mode="HTML", reply_markup=keyboard)
-
-
-# 1️⃣ مصفوفة البيانات الضخمة (توضع خارج الدالة كمتغير عام أو داخلها)
-ITEMS_DB = {
-    # الألقاب الملكية
-    "royal": {
-        "legend": {"name": "✨ الأسطورة", "price": 5000},
-        "king": {"name": "👑 ملك المعرفة", "price": 15000},
-        "scholar": {"name": "📚 المحقق العلامة", "price": 4000},
-        "genius": {"name": "🧠 العبقري الفذ", "price": 7000},
-        "noble": {"name": "💎 النبيل", "price": 5500},
-        "sultan": {"name": "⚜️ سلطان الحرف", "price": 12000},
-        "wise": {"name": "📜 الحكيم", "price": 3500},
-        "knight": {"name": "🛡️ فارس الكلمة", "price": 4500},
-        "leader": {"name": "🚩 القائد", "price": 10000}
-    },
-    # الألقاب البناتية
-    "girls": {
-        "princess": {"name": "🌸 أميرة الحرف", "price": 4000},
-        "rare": {"name": "💎 نادرة الوجود", "price": 6000},
-        "queen": {"name": "👑 الملكة", "price": 15000},
-        "rose_t": {"name": "🌹 وردة المجموعة", "price": 3000},
-        "pearl": {"name": "🐚 لؤلؤة النقاء", "price": 5500},
-        "moon": {"name": "🌙 قمر الزمان", "price": 7000},
-        "butterfly": {"name": "🦋 الفراشة", "price": 2500},
-        "diamond": {"name": "💠 الماسة", "price": 12000},
-        "melody": {"name": "🎶 لحن الوفاء", "price": 5000}
-    },
-    # الورود والهدايا
-    "gifts": {
-        "rose_red": {"name": "🌹 باقة ورد أحمر", "price": 1000},
-        "tulip": {"name": "🌷 زهرة التوليب", "price": 1200},
-        "bouquet": {"name": "💐 الباقة الملكية", "price": 5000},
-        "sunflower": {"name": "🌻 إشراقة أمل", "price": 1500},
-        "jasmine": {"name": "⚪ ياسمين الشام", "price": 1100},
-        "choc": {"name": "🍫 صندوق شوكولا", "price": 2000},
-        "gift_b": {"name": "🎁 صندوق المفاجآت", "price": 3000},
-        "ring": {"name": "💍 خاتم الألماس", "price": 20000}
-    },
-    # المقتنيات النادرة
-    "rare": {
-        "crown": {"name": "🏅 تاج الذكاء", "price": 10000},
-        "sword": {"name": "⚔️ سيف القنص", "price": 7000},
-        "eagle": {"name": "🦅 الصقر الجارح", "price": 13000},
-        "lamp": {"name": "🪔 مصباح علاء الدين", "price": 18000},
-        "trophy": {"name": "🏆 كأس العالم", "price": 25000},
-        "dragon": {"name": "🐲 التنين الأسطوري", "price": 50000},
-        "phoenix": {"name": "🐦 طائر الفينيق", "price": 30000},
-        "throne": {"name": "🪑 عرش المعرفة", "price": 100000}
-    }
-}
-
-# 2️⃣ دالة لوحة التحكم الرئيسية (الأقسام)
-def get_shop_main_keyboard():
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data="open_cat_royal"),
-        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data="open_cat_girls")
-    )
-    keyboard.add(
-        InlineKeyboardButton("💐 : الورود والهدايا", callback_data="open_cat_gifts"),
-        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data="open_cat_rare")
-    )
-    keyboard.add(
-        InlineKeyboardButton("🃏 : كروت اللعب", callback_data="open_cat_cards"),
-        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data="close_card")
-    )
-    return keyboard
-
-# 3️⃣ دالة توليد أزرار المنتجات داخل القسم
-def get_products_keyboard(category):
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    products = ITEMS_DB.get(category, {})
-    
-    for p_id, p_info in products.items():
-        btn_text = f"{p_info['name']} | {p_info['price']}ن"
-        keyboard.insert(InlineKeyboardButton(btn_text, callback_data=f"buy_item_{p_id}_{category}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ : العودة للمتجر", callback_data="back_to_shop"))
-    return keyboard
-
-# 
-# --- [ أمر فتح المتجر بالعربي ] ---
-@dp.message_handler(commands=['متجر', 'سوق', 'دكان']) # أوامر بالسلاش
-@dp.message_handler(lambda message: message.text in ["متجر", "سوق", "بزار", "المتجر"]) # كلمات مباشرة
-async def open_global_shop(message: types.Message):
-    """
-    فتح بوابة المتجر العالمي الكبير 2026
-    """
-    user_id = message.from_user.id
-    try:
-        # 1. جلب رصيد المحفظة من سوبابيس
-        res = supabase.table("users_global_profile").select("wallet").eq("user_id", user_id).execute()
-        
-        # إذا كان اللاعب جديداً وليس لديه سجل، نعتبر رصيده 0
-        wallet = res.data[0]['wallet'] if res.data and len(res.data) > 0 else 0
-        
-        # 2. تجهيز القالب النصي الفخم
-        shop_text = await format_shop_bazaar_card(wallet)
-        
-        # 3. إرسال المتجر مع لوحة الأزرار الملكية
-        await message.reply(
-            shop_text, 
-            reply_markup=get_shop_main_keyboard(), 
-            parse_mode="HTML"
-        )
-        
-    except Exception as e:
-        import logging
-        logging.error(f"❌ خطأ في فتح المتجر: {e}")
-        await message.reply("<b>⚠️ : عذراً يا شريك.. المتجر مغلق مؤقتاً لتفريغ البضاعة الجديدة! 🚚</b>", parse_mode="HTML")
 
 # ==========================================
 # 5. الترحيب التلقائي بصورة البوت
