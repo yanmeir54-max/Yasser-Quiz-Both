@@ -978,48 +978,7 @@ async def cmd_show_profile_global(message: types.Message):
     else:
         await message.answer(profile_text, parse_mode="HTML", reply_markup=keyboard)
 
-# --- [ معالج فتح الأقسام داخل المتجر ] ---
-@dp.callback_query_handler(lambda c: c.data.startswith('open_cat_'))
-async def shop_category_callback(c: types.CallbackQuery):
-    user_id = c.from_user.id
-    # حارس البعسسة: التأكد أن الضاغط هو صاحب الأمر الأصلي
-    if c.message.reply_to_message and c.message.reply_to_message.from_user.id != user_id:
-        return await c.answer("🚫 : المتجر ليس لك! افتح متجرك الخاص بطلب /shop", show_alert=True)
 
-    category = c.data.replace('open_cat_', '')
-    
-    # إذا كان القسم هو الكروت، نستخدم لوحة الكروت الاستراتيجية
-    if category == "cards":
-        # يمكنك تخصيص لوحة خاصة للكروت هنا
-        await c.answer("🃏 : قسم الكروت الاستراتيجية", show_alert=False)
-        # هنا نستدعي لوحة الكروت (التي برمجناها سابقاً)
-    else:
-        await c.message.edit_reply_markup(reply_markup=get_products_keyboard(category))
-        await c.answer(f"📂 : تم فتح القسم")
-
-# --- [ معالج زر العودة للمتجر الرئيسي ] ---
-@dp.callback_query_handler(lambda c: c.data == 'back_to_shop')
-async def back_to_shop_callback(c: types.CallbackQuery):
-    user_id = c.from_user.id
-    if c.message.reply_to_message and c.message.reply_to_message.from_user.id != user_id:
-        return await c.answer("🚫 : لا يمكنك التدخل!", show_alert=True)
-    
-    await c.message.edit_reply_markup(reply_markup=get_shop_main_keyboard())
-    await c.answer("🔙 : عدنا للمتجر")
-
-# --- [ معالج زر الإغلاق المحصن ] ---
-@dp.callback_query_handler(lambda c: c.data == 'close_card')
-async def close_callback(c: types.CallbackQuery):
-    user_id = c.from_user.id
-    # حماية من إغلاق لوحات الغير
-    if c.message.reply_to_message and c.message.reply_to_message.from_user.id != user_id:
-        return await c.answer("🚫 : لا يمكنك إغلاق لوحة غيرك!", show_alert=True)
-    
-    try:
-        await c.message.delete()
-    except:
-        await c.answer("❌ : تعذر الحذف")
-        
 # 1️⃣ مصفوفة البيانات الضخمة (توضع خارج الدالة كمتغير عام أو داخلها)
 ITEMS_DB = {
     # الألقاب الملكية
@@ -1099,84 +1058,7 @@ def get_products_keyboard(category):
     keyboard.add(InlineKeyboardButton("⬅️ : العودة للمتجر", callback_data="back_to_shop"))
     return keyboard
 
-# 4️⃣ المعالج الشامل للضغطات (Callback Handler) - نسخة aiogram المحصنة
-@dp.callback_query_handler(lambda call: True)
-async def shop_master_handler(call: types.CallbackQuery):
-    user_id = call.from_user.id
-    data = call.data
-
-    # حارس البعسسة: التأكد أن الضاغط هو صاحب الأمر الأصلي
-    # ملاحظة: نستخدم call.message.reply_to_message للتحقق
-    if call.message.reply_to_message and call.message.reply_to_message.from_user.id != user_id:
-        return await call.answer("🚫 : المتجر ليس لك! افتح متجرك الخاص.", show_alert=True)
-
-    # --- [ فتح قسم معين ] ---
-    if data.startswith("open_cat_"):
-        cat = data.replace("open_cat_", "")
-        try:
-            await call.message.edit_reply_markup(reply_markup=get_products_keyboard(cat))
-            await call.answer("📂 : تم فتح القسم")
-        except:
-            await call.answer("⚠️ : القسم فارغ حالياً")
-
-    # --- [ العودة للمتجر الرئيسي ] ---
-    elif data == "back_to_shop":
-        await call.message.edit_reply_markup(reply_markup=get_shop_main_keyboard())
-        await call.answer("🔙 : عدنا للمتجر")
-
-    # --- [ عملية الشراء الفعلية ] ---
-    elif data.startswith("buy_item_"):
-        # تنسيق البيانات المتوقع: buy_item_ID_CATEGORY
-        parts = data.split("_")
-        if len(parts) < 4: return
-        
-        item_id = parts[2]
-        cat = parts[3]
-        item_info = ITEMS_DB.get(cat, {}).get(item_id)
-
-        if not item_info:
-            return await call.answer("❌ : هذا الصنف غير متاح حالياً")
-
-        try:
-            # جلب بيانات المستخدم من سوبابيس
-            res = supabase.table("users_global_profile").select("*").eq("user_id", user_id).execute()
-            if not res.data:
-                return await call.answer("❌ : ليس لديك حساب مسجل!", show_alert=True)
-                
-            u_data = res.data[0]
-            current_wallet = u_data.get('wallet', 0)
-
-            # التحقق من الرصيد
-            if current_wallet < item_info['price']:
-                return await call.answer(f"⚠️ : رصيدك ({current_wallet}) لا يكفي!", show_alert=True)
-
-            # تحديث المحفظة والمقتنيات
-            new_inv = u_data.get('inventory') or []
-            new_inv.append(item_info['name'])
-            
-            supabase.table("users_global_profile").update({
-                "wallet": current_wallet - item_info['price'],
-                "inventory": new_inv
-            }).eq("user_id", user_id).execute()
-
-            await call.answer(f"✅ : مبروك شراء {item_info['name']}", show_alert=True)
-            
-            # تحديث نص الرسالة بالرصيد الجديد
-            new_text = await format_shop_bazaar_card(current_wallet - item_info['price'])
-            await call.message.edit_text(new_text, parse_mode="HTML", reply_markup=get_products_keyboard(cat))
-            
-        except Exception as e:
-            import logging
-            logging.error(f"Error in purchase: {e}")
-            await call.answer("❌ : حدث خطأ أثناء المعاملة!")
-
-    # --- [ زر الإغلاق ] ---
-    elif data == "close_card":
-        try:
-            await call.message.delete()
-        except:
-            await call.answer("❌ : لا يمكن حذف هذه الرسالة")
-
+# 
 # --- [ أمر فتح المتجر بالعربي ] ---
 @dp.message_handler(commands=['متجر', 'سوق', 'دكان']) # أوامر بالسلاش
 @dp.message_handler(lambda message: message.text in ["متجر", "سوق", "بزار", "المتجر"]) # كلمات مباشرة
