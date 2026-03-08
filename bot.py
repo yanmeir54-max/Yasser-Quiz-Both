@@ -1265,6 +1265,46 @@ async def handle_control_buttons(c: types.CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
 
+# --- [ 4. محرك التنقل بين أقسام المتجر ] ---
+@dp.callback_query_handler(lambda c: c.data.startswith('open_cat_') or c.data in ['back_to_shop', 'close_card'])
+async def shop_navigation_handler(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    data = call.data
+
+    # 🛡️ حارس البعسسة: التأكد أن الضاغط هو صاحب الطلب
+    if call.message.reply_to_message and call.message.reply_to_message.from_user.id != user_id:
+        return await call.answer("🚫 : المتجر ليس لك يا شريك! اطلب /متجر خاص بك.", show_alert=True)
+
+    try:
+        # أ. إغلاق المتجر
+        if data == "close_card":
+            await call.message.delete()
+            await call.answer("✅ : تم إغلاق المتجر")
+
+        # ب. العودة للقائمة الرئيسية
+        elif data == "back_to_shop":
+            await call.message.edit_reply_markup(reply_markup=get_shop_main_keyboard())
+            await call.answer("🔙 : العودة للقائمة الرئيسية")
+
+        # ج. فتح قسم محدد (الملكية، البنات، إلخ)
+        elif data.startswith("open_cat_"):
+            category = data.replace("open_cat_", "")
+            
+            # فحص إذا كان القسم موجوداً في مصفوفتنا ITEMS_DB
+            if category in ITEMS_DB:
+                await call.message.edit_reply_markup(reply_markup=get_products_keyboard(category))
+                await call.answer(f"📂 : تم فتح قسم {category}")
+            elif category == "cards":
+                # قسم الكروت سنبرمجه لاحقاً كخطوة مستقلة
+                await call.answer("🃏 : قسم الكروت قيد التجهيز في الخطوة القادمة!", show_alert=True)
+            else:
+                await call.answer("⚠️ : هذا القسم غير متوفر حالياً")
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error in Shop Navigation: {e}")
+        await call.answer("❌ : حدث خطأ أثناء التنقل!")
+        
 # --- معالج أزرار التفعيل (الإصدار الآمن والمضمون) ---
 @dp.callback_query_handler(lambda c: c.data.startswith(('auth_approve_', 'auth_block_')), user_id=ADMIN_ID)
 async def process_auth_callback(c: types.CallbackQuery):
