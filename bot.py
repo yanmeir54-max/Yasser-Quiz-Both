@@ -492,7 +492,7 @@ def get_main_control_kb(user_id):
     kb = InlineKeyboardMarkup(row_width=2).add(
         InlineKeyboardButton("📝 إضافة خاصة", callback_data=f"custom_add_{user_id}"),
         InlineKeyboardButton("📅 جلسة سابقة", callback_data=f"dev_session_{user_id}"),
-        InlineKeyboardButton("🛒 المتجر العالمي", callback_data=f"open_shop_{user_id}"), # زر المتجر الجديد
+        InlineKeyboardButton("🛒 المتجر العالمي", callback_data=f"open_shop_{user_id}"),
         InlineKeyboardButton("🏆 تجهيز مسابقة", callback_data=f"setup_quiz_{user_id}"),
         InlineKeyboardButton("📊 لوحة الصدارة", callback_data=f"dev_leaderboard_{user_id}"),
         InlineKeyboardButton("🛑 إغلاق", callback_data=f"close_bot_{user_id}")
@@ -1011,17 +1011,24 @@ def get_shop_main_keyboard():
         InlineKeyboardButton("❌ : إغلاق المتجر", callback_data="close_card")
     )
     return keyboard
-
-def get_products_keyboard(category):
+# --- [ 3. دوال الأزرار (Keyboards) المحدثة بالحماية ] ---
+def get_shop_main_keyboard(user_id):
     keyboard = InlineKeyboardMarkup(row_width=2)
-    products = ITEMS_DB.get(category, {})
     
-    for p_id, p_info in products.items():
-        # دمجنا الاسم والسعر في زر واحد
-        btn_text = f"{p_info['name']} | {p_info['price']}ن"
-        keyboard.insert(InlineKeyboardButton(btn_text, callback_data=f"buy_item_{p_id}_{category}"))
+    # ربطنا كل قسم بآيدي المستخدم لضمان الأمان في الخطوات القادمة
+    keyboard.add(
+        InlineKeyboardButton("👑 : الألقاب الملكية", callback_data=f"cat_royal_{user_id}"),
+        InlineKeyboardButton("🌸 : الألقاب البناتية", callback_data=f"cat_girls_{user_id}")
+    )
+    keyboard.add(
+        InlineKeyboardButton("💐 : الورود والهدايا", callback_data=f"cat_gifts_{user_id}"),
+        InlineKeyboardButton("⚔️ : مقتنيات نادرة", callback_data=f"cat_rare_{user_id}")
+    )
+    keyboard.add(
+        InlineKeyboardButton("🃏 : كروت اللعب", callback_data=f"cat_cards_{user_id}"),
+        InlineKeyboardButton("❌ : إغلاق المتجر", callback_data=f"close_bot_{user_id}") # استخدمنا نفس زر الإغلاق لتوحيد الكود
+    )
     
-    keyboard.add(InlineKeyboardButton("⬅️ : العودة للمتجر", callback_data="back_to_shop"))
     return keyboard
     
 # ==========================================
@@ -1034,6 +1041,7 @@ class Form(StatesGroup):
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
     waiting_for_quiz_name = State()
+
 # --- [ 2. مفاتيح الهاندلرز - Handlers ] ---
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
 @dp.message_handler(lambda m: m.text in ["عني", "رتبتي", "نقاطي", "محفظتي", "بروفايلي"])
@@ -1115,7 +1123,6 @@ async def welcome_bot_to_group(message: types.Message):
                 # في حال لم تضع الآيدي بعد أو حدث خطأ، يرسل نصاً فقط
                 await message.answer(welcome_text, reply_markup=kb_welcome, parse_mode="HTML")
 # ==========================================
-# --- ---
 # ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith('cancel_quiz_'))
 async def cancel_quiz_handler(c: types.CallbackQuery):
@@ -1123,7 +1130,6 @@ async def cancel_quiz_handler(c: types.CallbackQuery):
     cancelled_groups.add(chat_id)
     await c.message.edit_text("🚫 **تم إلغاء المسابقة في هذه المجموعة.**")
     await c.answer("تم الإلغاء بنجاح", show_alert=True)
-
 # ==========================================
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
@@ -1197,6 +1203,7 @@ async def cmd_transfer(message: types.Message):
     response = await process_bank_transfer(message.from_user.id, amount, receiver_acc)
     await message.answer(response, parse_mode="HTML")
 
+
 # ==========================================
 # 2. تعديل أمر "تحكم" لضمان عدم العمل إلا بعد التفعيل
 # ==========================================
@@ -1266,27 +1273,29 @@ async def handle_control_buttons(c: types.CallbackQuery, state: FSMContext):
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
-
-    # 5️⃣ [ زر المتجر العالمي ] 🛒
+        # 5️⃣ [ محرك فتح المتجر العالمي ] 🛒
     elif action == "open" and "shop" in data_parts:
         await c.answer("💰 جاري فتح المتجر الملكي...")
         
-        # 1. جلب رصيد المستخدم من سوبابيس (لإظهاره في النص)
+        # 1. جلب رصيد المستخدم من سوبابيس (أو وضعه 0 كاحتياط)
         try:
             res = supabase.table("users_global_profile").select("wallet").eq("user_id", owner_id).execute()
-            wallet = res.data[0]['wallet'] if res.data else 0
+            wallet = res.data[0]['wallet'] if res.data and len(res.data) > 0 else 0
         except Exception as e:
-            wallet = 0 # في حال حدوث خطأ نعتبر الرصيد 0 مؤقتاً
+            print(f"Error fetching wallet: {e}")
+            wallet = 0 
             
-        # 2. تجهيز النص الفخم للمتجر
+        # 2. تجهيز النص الفخم (تأكد من وجود دالة format_shop_bazaar_card)
         shop_text = await format_shop_bazaar_card(wallet)
         
-        # 3. تعديل الرسالة الحالية لتصبح واجهة المتجر
+        # 3. تحديث الكيبورد واستدعاء دالة الأقسام
+        # أضفنا owner_id لكي تمر الحماية للأزرار التالية
         return await c.message.edit_text(
             shop_text,
-            reply_markup=get_shop_main_keyboard(), # دالة الأقسام التي صممناها
+            reply_markup=get_shop_main_keyboard(owner_id), 
             parse_mode="HTML"
         )
+
 # --- [ 4. محرك التنقل بين أقسام المتجر ] ---
 @dp.callback_query_handler(lambda c: c.data.startswith('open_cat_') or c.data in ['back_to_shop', 'close_card'])
 async def shop_navigation_handler(call: types.CallbackQuery):
@@ -1348,7 +1357,6 @@ async def process_auth_callback(c: types.CallbackQuery):
     
 
 # --- [ 2. إدارة الأقسام والأسئلة (النسخة النهائية المصلحة) ] ---
-
 @dp.callback_query_handler(lambda c: c.data.startswith('custom_add'), state="*")
 async def custom_add_menu(c: types.CallbackQuery, state: FSMContext = None):
     if state:
@@ -1704,7 +1712,6 @@ async def execute_delete_question(c: types.CallbackQuery):
     await delete_questions_menu(c)
 
 
-
 # --- 7. حذف القسم نهائياً (النسخة المصلحة) ---
 @dp.callback_query_handler(lambda c: c.data.startswith('confirm_del_cat_'))
 async def confirm_delete_cat(c: types.CallbackQuery):
@@ -1804,8 +1811,6 @@ async def setup_quiz_main(c: types.CallbackQuery, state: FSMContext):
         reply_markup=get_setup_quiz_kb(owner_id), 
         parse_mode="Markdown"
     )
-
-
 # ==========================================
 # 1. اختيار مصدر الأسئلة (رسمي / خاص / أعضاء) - نسخة المجلدات والأسماء
 # ==========================================
