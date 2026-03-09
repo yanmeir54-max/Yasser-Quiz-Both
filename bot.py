@@ -1123,18 +1123,20 @@ class Form(StatesGroup):
     waiting_for_new_cat_name = State()
     waiting_for_quiz_name = State()
 
-    # --- [ 2. مفاتيح الهاندلرز - Handlers ] ---
+# ==========================================
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
+# ==========================================
 @dp.message_handler(lambda m: m.text in ["عني", "رتبتي", "نقاطي", "محفظتي", "بروفايلي"])
 @dp.message_handler(lambda m: m.reply_to_message and m.text in ["عنه", "رتبته", "نقاطه", "محفظته", "بروفايله"])
 async def cmd_show_profile_global(message: types.Message):
-    # تحديد الهدف (أنا أو الشخص الذي تم الرد عليه)
+    # 1. تحديد الهدف (أنا أو الشخص الذي تم الرد عليه)
     target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
     uid = target.id
 
-    status = await message.reply("⏳ <b>جاري سحب بياناتك من السجل العالمي...</b>", parse_mode="HTML")
+    # رسالة مؤقتة
+    status = await message.reply("⏳ <b>جاري سحب البيانات من السجل العالمي...</b>", parse_mode="HTML")
 
-    # جلب البيانات من الجدول users_global_profile
+    # 2. جلب البيانات من السجل (تأكد أن الدالة get_user_full_data تجلب الحقول الجديدة)
     user_data = await get_user_full_data(uid)
     
     if not user_data:
@@ -1142,25 +1144,46 @@ async def cmd_show_profile_global(message: types.Message):
         msg = "❌ هذا المستخدم غير مسجل عالمياً." if message.reply_to_message else "❌ ليس لديك سجل عالمي بعد!"
         return await message.reply(msg)
 
-    # تنسيق البطاقة وجلب الكيبورد
+    # 3. تنسيق البطاقة (التي عدلناها لتكون الألقاب والمقتنيات في أسطر)
     profile_text = await format_profile_card(user_data, uid)
-    keyboard = get_profile_keyboard() # <--- تم الاستدعاء هنا
     
-    # جلب الصورة
+    # 4. جلب الكيبورد (تم تمرير uid ليعمل المتجر لصاحب البروفايل)
+    keyboard = get_profile_keyboard(uid) 
+    
+    # 5. محاولة جلب صورة البروفايل
     photo_id = None
     try:
         photos = await bot.get_user_profile_photos(uid, limit=1)
         if photos.total_count > 0:
             photo_id = photos.photos[0][-1].file_id
-    except: pass
+    except: 
+        pass
 
-    await status.delete()
+    await status.delete() # حذف رسالة "جاري السحب"
     
+    # 6. إرسال البروفايل (صورة أو نص)
+    final_msg = None
     if photo_id:
-        await message.answer_photo(photo_id, caption=profile_text, parse_mode="HTML", reply_markup=keyboard)
+        final_msg = await message.answer_photo(
+            photo_id, 
+            caption=profile_text, 
+            parse_mode="HTML", 
+            reply_markup=keyboard
+        )
     else:
-        await message.answer(profile_text, parse_mode="HTML", reply_markup=keyboard)
+        final_msg = await message.answer(
+            profile_text, 
+            parse_mode="HTML", 
+            reply_markup=keyboard
+        )
 
+    # 7. 🔥 نظام التدمير الذاتي (الحذف بعد دقيقة)
+    await asyncio.sleep(60) # الانتظار لمدة 60 ثانية
+    try:
+        await final_msg.delete() # حذف البروفايل
+        await message.delete()   # حذف أمر المستخدم لتنظيف المجموعة
+    except:
+        pass # في حال تم حذفها يدوياً من قبل مشرف
 # ==========================================
 # 6. معالج أمر البدء المطور في الخاص /start
 # ==========================================
