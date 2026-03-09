@@ -854,15 +854,19 @@ async def format_profile_card(user_data: dict, user_id: int):
     inventory = p.get('inventory', []) 
 
     # --- [ 3. بناء نص البطاقة النهائي ] ---
-    card = f"<b>       👤 : بـروفـايـل الـمـتـمـيـز 👤</b>\n"
+    card = f"<b>    👤 : بـروفـايـل الـمـتـمـيـز 👤</b>\n"
     card += "<b>— — — — — — — — — — — —</b>\n"
     card += f"🆔 <b>:</b> الاسم ⇠ <a href='tg://user?id={user_id}'>{p.get('user_name', 'مشارك جديد')}</a>\n"
-    card += f"💳 <b>:</b> الحساب ⇠ <code>#{p.get('bank_account', '----')}</code>\n" # تم استعادة الحساب هنا
+    card += f"💳 <b>:</b> الحساب ⇠ <code>#{p.get('bank_account', '----')}</code>\n"
     card += f"🎓 <b>:</b> الرتبة ⇠ <b>{current_rank}</b>\n"
     card += f"🎖 <b>:</b> التخصص ⇠ <b>{p.get('specialty_title', 'هاوي')}</b>\n"
     
+    # --- [ قسم الألقاب: كل لقب في سطر ] ---
     if titles:
-        card += f"👑 <b>:</b> الألقاب ⇠ <code>{' | '.join(titles[:2])}</code>\n"
+        card += "<b>— — — — — — — — — — — —</b>\n"
+        card += "<b>👑 : الألـقـاب الـمـلـكـيـة :</b>\n"
+        for title in titles:
+            card += f"  ⇠ <code>{title}</code>\n"
     
     card += "<b>— — — — — — — — — — — —</b>\n"
     card += f"📈 <b>: التقدم لـ ({next_rank_name}) :</b>\n"
@@ -877,27 +881,34 @@ async def format_profile_card(user_data: dict, user_id: int):
     card += f"✅ <b>:</b> الإجمالي ⇠ <code>{ans_count}</code> إجابة\n"
     card += "<b>— — — — — — — — — — — —</b>\n"
     
+    # --- [ قسم الكروت: تحديث المسميات وكل كرت في سطر ] ---
     card += "<b>🃏 : مـخـزن الـكـروت الـمـلـكـي :</b>\n"
-    card += f"⏳ <b>:</b> كرت الوقت ⇠ [ <code>{cards.get('time_card', 0)}</code> ]\n"
-    card += f"👁 <b>:</b> كرت الإجابة ⇠ [ <code>{cards.get('answer_card', 0)}</code> ]\n"
-    card += f"💡 <b>:</b> كرت التلميح ⇠ [ <code>{cards.get('hint_card', 0)}</code> ]\n"
-    card += f"🛡 <b>:</b> كرت الدرع ⇠ [ <code>{cards.get('shield_card', 0)}</code> ]\n"
+    card += f"🔍 <b>:</b> كرت إظهار حرف ⇠ [ <code>{cards.get('hint_letter', 0)}</code> ]\n"
+    card += f"💡 <b>:</b> كرت التلميح الكامل ⇠ [ <code>{cards.get('hint_full', 0)}</code> ]\n"
+    card += f"⏱️ <b>:</b> كرت زيادة الوقت ⇠ [ <code>{cards.get('add_time', 0)}</code> ]\n"
+    card += f"🎯 <b>:</b> كرت كشف الإجابة ⇠ [ <code>{cards.get('reveal_ans', 0)}</code> ]\n"
+    card += f"💰 <b>:</b> كرت المضاعفة x2 ⇠ [ <code>{cards.get('double_coin', 0)}</code> ]\n"
+    card += f"🛡️ <b>:</b> كرت حماية الدرع ⇠ [ <code>{cards.get('shield_up', 0)}</code> ]\n"
     card += "<b>— — — — — — — — — — — —</b>\n"
 
+    # --- [ قسم المقتنيات: كل مقتنى في سطر ] ---
     if inventory:
-        card += f"📦 <b>:</b> المقتنيات ⇠ <code>{' | '.join(inventory)}</code>\n"
+        card += "<b>📦 : الـمـقـتـنـيـات والـنـوادر :</b>\n"
+        for item in inventory:
+            card += f"  ⇠ <code>{item}</code>\n"
         card += "<b>— — — — — — — — — — — —</b>\n"
 
     return card
-# 1️⃣ دالة لوحة الأزرار (Keyboard)
-def get_profile_keyboard():
-    """تجهيز لوحة الأزرار الموحدة لبطاقة البروفايل"""
+
+# 1️⃣ دالة لوحة الأزرار (Keyboard) المصلحة
+def get_profile_keyboard(user_id):
     keyboard = InlineKeyboardMarkup(row_width=2)
+    # حذفنا فحص الـ ID لكي تعمل الأزرار لأي شخص يضغطها كما طلبت
     keyboard.add(
-       InlineKeyboardButton("🛒 : المتجر العالمي", callback_data="open_cat_cards"), # يفتح الكروت مثلاً
+       InlineKeyboardButton("🛒 : المتجر العالمي", callback_data=f"open_shop_{user_id}"),
        InlineKeyboardButton("❌ : إغلاق", callback_data="close_card")
     )
-    return
+    return keyboard
 
 # ========================================
 async def process_bank_transfer(sender_id, amount, receiver_acc):
