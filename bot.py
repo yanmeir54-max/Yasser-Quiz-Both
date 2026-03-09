@@ -3105,36 +3105,63 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
 def is_answer_correct(user_msg, correct_ans):
     if not user_msg or not correct_ans: return False
 
+    # 1. قاموس "الكلمات المهملة" (Stop Words)
+    # كلمات يكتبها المستخدمون ولا تؤثر على معنى الإجابة
+    stop_words = ["هو", "هي", "ال", "انه", "انها", "يكون", "يعتبر", "اسمها", "اسمه"]
+
+    # 2. قاموس اللهجات (توسعة ذكية)
+    dialect_map = {
+        "جوال": "هاتف", "مويه": "ماء", "زلط": "نقود", "بيسات": "نقود",
+        "سياره": "عربه", "موتر": "عربه", "قاري": "عربه"
+    }
+
     def clean_logic(text):
-        # 1. تنظيف أساسي (حذف المسافات وتحويل لصغير)
+        # أ. تنظيف التشكيل والرموز والمسافات
         text = text.strip().lower()
-        # 2. توحيد الألفات (أإآ -> ا)
+        text = re.sub(r'[\u064B-\u0652]', '', text) 
         text = re.sub(r'[أإآ]', 'ا', text)
-        # 3. توحيد التاء المربوطة (ة -> ه)
         text = re.sub(r'ة', 'ه', text)
-        # 4. توحيد الياء (ى -> ي)
         text = re.sub(r'ى', 'ي', text)
-        # 5. معالجة الواو الزائدة (مثل عمرو -> عمر)
-        if text.endswith('و') and len(text) > 3:
-            text = text[:-1]
-        # 6. حذف المسافات الزائدة بين الكلمات
-        text = ' '.join(text.split())
-        return text
+        
+        # ب. فكرة (1): حذف ال التعريف الزائدة (السيارة -> سياره)
+        # لكي لو كانت الإجابة "قمر" وكتب المستخدم "القمر" يحسبها صح
+        words = text.split()
+        cleaned_words = []
+        for w in words:
+            # حذف "ال" التعريف إذا كانت الكلمة أطول من 4 حروف
+            if w.startswith("ال") and len(w) > 4:
+                w = w[2:]
+            
+            # ج. فكرة (2): تجاهل الكلمات المهملة
+            if w in stop_words: continue
+            
+            # د. تحويل اللهجات
+            w = dialect_map.get(w, w)
+            cleaned_words.append(w)
+            
+        return ''.join(cleaned_words) # ندمج الحروف تماماً للمقارنة القوية
 
     user_clean = clean_logic(user_msg)
     correct_clean = clean_logic(correct_ans)
 
-    # 1. فحص التطابق التام
+    # --- [ فكرة (3): معالجة الأرقام المكتوبة (عشرون vs 20) ] ---
+    # نستخدم ريجيكس لاستخراج أي أرقام للمقارنة
+    user_nums = re.findall(r'\d+', user_msg)
+    correct_nums = re.findall(r'\d+', correct_ans)
+    
+    # فكرة (4): "قفل الأرقام" (ثغرة 30 رمضان)
+    if correct_nums and not user_nums:
+        # إذا كانت الإجابة الأصلية فيها رقم والمستخدم لم يكتب رقماً.. نرفض فوراً
+        # إلا إذا كتب الرقم نصاً (ثلاثين) - سنعالجها بـ dialect_map لاحقاً
+        return False
+
+    # 1. التطابق التام بعد سحق المسافات والتعريف
     if user_clean == correct_clean:
         return True
 
-    # 2. فحص الاحتواء (كلمة من إجابة طويلة)
-    if len(user_clean) > 3 and (user_clean in correct_clean or correct_clean in user_clean):
-        return True
-
-    # 3. فحص نسبة التشابه (تجاوز الأخطاء الإملائية 80%)
+    # 2. فحص نسبة التشابه (ليكون رحيماً بالأخطاء المطبعية)
     similarity = difflib.SequenceMatcher(None, user_clean, correct_clean).ratio()
-    if similarity >= 0.80:
+    if similarity >= 0.82:
         return True
 
     return False
