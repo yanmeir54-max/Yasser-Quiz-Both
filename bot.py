@@ -1151,6 +1151,58 @@ async def cmd_show_profile_global(message: types.Message):
         await message.answer(profile_text, parse_mode="HTML", reply_markup=keyboard)
 
 # ==========================================
+# 6. معالج أمر البدء المطور في الخاص /start
+# ==========================================
+@dp.message_handler(commands=['start'], chat_type=types.ChatType.PRIVATE)
+async def private_start_handler(message: types.Message):
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name
+    
+    # لوحة الأزرار التفاعلية
+    kb_start = InlineKeyboardMarkup(row_width=2)
+    kb_start.add(
+        InlineKeyboardButton("👤 ملفي الشخصي", callback_data=f"my_profile_{user_id}"),
+        InlineKeyboardButton("🛒 المتجر الملكي", callback_data=f"open_shop_{user_id}")
+    )
+    kb_start.add(
+        InlineKeyboardButton("👨‍💻 المطور: ياسر", url="https://t.me/Ya_79k"),
+        InlineKeyboardButton("📢 قناة البوت", url="https://t.me/YourChannel")
+    )
+    kb_start.add(
+        InlineKeyboardButton("➕ أضفني لمجموعتك الآن", url=f"https://t.me/{(await bot.get_me()).username}?startgroup=true")
+    )
+
+    welcome_msg = (
+        f"👋 <b>أهلاً بك يا {first_name} في عالم التحدي!</b>\n\n"
+        f"أنا بوت المسابقات الأكثر ذكاءً، استعد لاختبار معلوماتك.\n"
+        f"❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n"
+        f"📜 <b>أوامر المستخدمين (في المجموعات):</b>\n"
+        f"🔹 <code>عني</code> : لعرض بطاقتك الشخصية ومقتنياتك.\n"
+        f"🔹 <code>متجر</code> : لفتح سوق الألقاب والكروت والهدايا.\n"
+        f"🔹 <code>ترتيب</code> : لعرض قائمة توب الأغنياء والعلماء.\n\n"
+        f"🛠️ <b>أوامر الإدارة (للمشرفين فقط):</b>\n"
+        f"🔸 <code>تفعيل</code> : لطلب تشغيل البوت في المجموعة.\n"
+        f"🔸 <code>تحكم</code> : لضبط إعدادات المسابقة والوقت.\n"
+        f"🔸 <code>طرد</code> : لإخراج المشاغبين من المسابقة.\n"
+        f"❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n"
+        f"💎 <b>ميزة خاصة:</b> يمكنك جمع النقاط واستبدالها بجوائز حقيقية داخل المتجر!\n\n"
+        f"💬 <b>للتواصل المباشر مع المطور (ياسر):</b>\n"
+        f"اضغط هنا: @Ya_79k"
+    )
+
+    try:
+        # Photo ID الخاص بصورة الترحيب (يفضل صورة فخمة للبوت)
+        bot_photo = "AgACAgQAAxkBAA..." 
+        await message.answer_photo(
+            photo=bot_photo,
+            caption=welcome_msg,
+            reply_markup=kb_start,
+            parse_mode="HTML"
+        )
+    except:
+        await message.answer(welcome_msg, reply_markup=kb_start, parse_mode="HTML")
+
+# ==========================================
 # 5. الترحيب التلقائي بصورة البوت
 # ==========================================
 @dp.message_handler(content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
