@@ -1179,6 +1179,74 @@ async def shop_navigation_handler(call: types.CallbackQuery):
         # إذا حصل خطأ، سنطبع السبب الحقيقي في الكونسول لنعرفه
         await call.answer(f"❌ : خطأ برمي: {e}")
 # ==========================================
+@dp.callback_query_handler(lambda c: c.data.startswith('buy_'), state="*")
+async def handle_purchase(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    # تفكيك الداتا: buy_king_royal_1234567
+    parts = call.data.split('_')
+    item_id = parts[1]      # معرف المنتج (مثلاً: king)
+    category = parts[2]     # القسم (مثلاً: royal أو cards)
+    owner_id = int(parts[3]) # صاحب الطلب
+
+    # 🛡️ حماية: التأكد أن المشتري هو صاحب اللوحة
+    if user_id != owner_id:
+        return await call.answer("🚫 : المتجر ليس لك! اطلب /متجر خاص بك.", show_alert=True)
+
+    # 1. جلب بيانات المنتج من ITEMS_DB
+    product = ITEMS_DB.get(category, {}).get(item_id)
+    if not product:
+        return await call.answer("⚠️ : المنتج غير متوفر حالياً!", show_alert=True)
+
+    price = product['price']
+    item_name = product['name']
+
+    try:
+        # 2. جلب بيانات المستخدم الحالية من سوبابيس
+        res = supabase.table("users_global_profile").select("*").eq("user_id", user_id).execute()
+        if not res.data:
+            return await call.answer("❌ : لم يتم العثور على ملفك الشخصي!", show_alert=True)
+        
+        user_data = res.data[0]
+        wallet = user_data.get('wallet', 0)
+        current_titles = user_data.get('titles') or []
+        current_cards = user_data.get('cards_inventory') or {}
+
+        # 3. فحص الرصيد
+        if wallet < price:
+            return await call.answer(f"💸 : رصيدك {wallet}ن لا يكفي! تحتاج {price - wallet}ن إضافية.", show_alert=True)
+
+        # 4. فحص إذا كان يملك اللقب مسبقاً (للألقاب فقط)
+        if category != "cards" and item_name in current_titles:
+            return await call.answer(f"👑 : أنت تملك لقب [{item_name}] بالفعل!", show_alert=True)
+
+        # 5. تنفيذ عملية الخصم والتحديث
+        new_wallet = wallet - price
+        update_data = {"wallet": new_wallet}
+
+        if category == "cards":
+            # تحديث عداد الكروت (نزيد الكرت بمقدار 1)
+            current_cards[item_id] = current_cards.get(item_id, 0) + 1
+            update_data["cards_inventory"] = current_cards
+        else:
+            # إضافة اللقب للمصفوفة
+            current_titles.append(item_name)
+            update_data["titles"] = current_titles
+
+        # 6. حفظ البيانات في سوبابيس
+        supabase.table("users_global_profile").update(update_data).eq("user_id", user_id).execute()
+
+        # 🎉 نجاح العملية
+        await call.answer(f"✅ : تم شراء {item_name} بنجاح!", show_alert=True)
+        
+        # تحديث الرسالة لعرض الرصيد الجديد
+        new_text = await format_shop_bazaar_card(new_wallet)
+        await call.message.edit_text(new_text, reply_markup=get_shop_main_keyboard(user_id), parse_mode="HTML")
+
+    except Exception as e:
+        import logging
+        logging.error(f"Purchase Error: {e}")
+        await call.answer("❌ : حدث خطأ أثناء معالجة الشراء!")
+# ==========================================
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
 @dp.message_handler(lambda m: m.text == "تفعيل", chat_type=[types.ChatType.GROUP, types.ChatType.SUPERGROUP])
@@ -1250,6 +1318,7 @@ async def cmd_transfer(message: types.Message):
     # تنفيذ التحويل
     response = await process_bank_transfer(message.from_user.id, amount, receiver_acc)
     await message.answer(response, parse_mode="HTML")
+
 # ==========================================
 # 2. تعديل أمر "تحكم" لضمان عدم العمل إلا بعد التفعيل
 # ==========================================
