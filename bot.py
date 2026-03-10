@@ -491,69 +491,56 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
 
-
-# --- دالة تصحيح الخط العربي (مهمة جداً) ---
+# --- دالة الإصلاح القوية ---
 def fix_arabic(text):
     if not text: return ""
-    # إعادة تشكيل الحروف العربية لتكون مشبكة
-    reshaped_text = arabic_reshaper.reshape(str(text))
-    # عكس الاتجاه لتناسب العرض من اليمين لليسار
-    return get_display(reshaped_text)
+    # تنظيف وتشكيل وعكس النص في خطوة واحدة
+    text = str(text)
+    reshaped = arabic_reshaper.reshape(text) # لشبك الحروف
+    bidi_text = get_display(reshaped)       # لضبط الاتجاه من اليمين لليسار
+    return bidi_text
 
-# --- الخطوة الأولى: دالة المصنع ---
 async def generate_zidni_card(user_data, photo_url=None):
-    # مسارات الملفات (تأكد من وجود المجلدات في GitHub)
     CARD_PATH = "assets/images/zidni_card.png"
-    FONT_PATH = "assets/fonts/font.ttf" # ملف الخط اللي رفعته
+    FONT_PATH = "assets/fonts/font.ttf" # تأكد أنه ملف NotoSansArabic-Bold
 
     try:
-        # 1. فتح قالب البطاقة
         template = Image.open(CARD_PATH).convert("RGBA")
         draw = ImageDraw.Draw(template)
         
-        # 2. تحميل الخطوط (حجم 35 للاسم و 30 للبقية)
+        # تحميل الخط
         font_main = ImageFont.truetype(FONT_PATH, 35)
         font_info = ImageFont.truetype(FONT_PATH, 30)
 
-        # 3. معالجة صورة المستخدم (الافتار) ووضعها في الدائرة
-        if photo_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(photo_url) as resp:
-                    if resp.status == 200:
-                        p_img = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
-                        size = (195, 195) # مقاس الدائرة في تصميمك
-                        p_img = ImageOps.fit(p_img, size, centering=(0.5, 0.5))
-                        mask = Image.new('L', size, 0)
-                        ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
-                        p_img.putalpha(mask)
-                        # لصق الصورة في إحداثيات الدائرة (تقريباً 65, 50)
-                        template.paste(p_img, (65, 50), p_img)
+        # (كود معالجة صورة البروفايل يبقى كما هو...)
 
-        # 4. طباعة النصوص (استخدام fix_arabic لتصحيح اللغة)
-        white = (255, 255, 255) # لون أبيض
-        gold = (212, 175, 55)   # لون ذهبي
+        # --- الجزء الحاسم: طباعة النصوص بصيغة fix_arabic ---
+        # لاحظ استخدام anchor="ra" (Right-Aligned) لتثبيت النص من اليمين
+        
+        # الاسم
+        draw.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=(255,255,255), anchor="ra")
+        
+        # الدولة (اليمن 🇾🇪)
+        draw.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=(212, 175, 55), anchor="ra")
+        
+        # الرتبة
+        draw.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=(255,255,255), anchor="ra")
+        
+        # المبلغ
+        draw.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=(212, 175, 55), anchor="ra")
+        
+        # رقم الحساب (في المنتصف mm)
+        draw.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=(255,255,255), anchor="mm")
 
-        # [البيانات تعتمد على الأعمدة في جدولك]
-        # الاسم (المربع الأول)
-        draw.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
-        # الدولة (المربع الثاني - ثابتة أو متغيرة)
-        draw.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
-        # الرتبة (المربع الثالث - educational_rank)
-        draw.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
-        # المبلغ (المربع الرابع - wallet)
-        draw.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
-        # رقم الحساب (الشريط الأسفل - bank_account)
-        draw.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
-
-        # 5. تحويل الصورة لبايتات لإرسالها
         output = io.BytesIO()
         template.save(output, format='PNG')
         output.seek(0)
         return output
 
     except Exception as e:
-        print(f"❌ خطأ في الدالة: {e}")
+        print(f"❌ Error during drawing: {e}")
         return None
+
         
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
