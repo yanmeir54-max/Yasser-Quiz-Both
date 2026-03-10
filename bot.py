@@ -476,7 +476,7 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
                     "educational_rank": calculate_rank(data['ans_count']),
                     "specialty_title": calculate_specialty({cat_name: data['ans_count']}),
                     "titles": ["🌱 : عضو جديد"], "inventory": [],
-                    "cards_inventory": {"time_card": 1, "answer_card": 1, "shield_card": 0, "hint_card": 1}
+                    "cards_inventory": {"time": 1, "full": 1, "shield": 1, "reveal": 1, "double": 1, "letter": 1}
                 }
                 supabase.table("users_global_profile").insert(new_payload).execute()
                 logging.info(f"🆕 تسجيل عضو عالمي جديد: {data['name']}")
