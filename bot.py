@@ -547,7 +547,7 @@ async def generate_zidni_card(user_data, photo_url=None):
                 profile.putalpha(mask)
 
                 # وضع الصورة في البطاقة
-                template.paste(profile, (120, 120), profile)
+                template.paste(profile, (120, 180), profile)
 
             except:
                 print("⚠️ فشل تحميل صورة البروفايل")
@@ -582,7 +582,7 @@ async def generate_zidni_card(user_data, photo_url=None):
             # الدولة
             pilmoji.text(
                 (795, 280),
-                fix_arabic("اليمن   🇾🇪"),
+                fix_arabic("اليمن"),
                 font=font_info,
                 fill=gold,
                 anchor="ra"
