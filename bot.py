@@ -572,7 +572,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # الاسم
             pilmoji.text(
-                (785, 310),
+                (795, 200),
                 fix_arabic(name),
                 font=font_main,
                 fill=white,
@@ -581,7 +581,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # الدولة
             pilmoji.text(
-                (785, 280),
+                (795, 280),
                 fix_arabic("اليمن 🇾🇪"),
                 font=font_info,
                 fill=gold,
@@ -590,7 +590,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # الرتبة
             pilmoji.text(
-                (785, 345),
+                (795, 345),
                 fix_arabic(rank),
                 font=font_info,
                 fill=white,
@@ -599,7 +599,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # الرصيد
             pilmoji.text(
-                (785, 415),
+                (795, 415),
                 fix_arabic(f"{wallet} ن"),
                 font=font_info,
                 fill=gold,
@@ -608,7 +608,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # رقم الحساب
             pilmoji.text(
-                (535, 570),
+                (635, 590),
                 fix_number(f"ZD-{acc_num}"),
                 font=font_info,
                 fill=white,
