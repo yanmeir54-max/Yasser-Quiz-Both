@@ -494,14 +494,22 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
 
-
 def fix_arabic(text):
     if not text: return ""
-    # 1. تشكيل الحروف لتصبح متصلة
-    reshaped_text = arabic_reshaper.reshape(str(text))
-    # 2. قلب الاتجاه ليكون RTL
+    # 1. إعدادات لإجبار المكتبة على شبك الحروف بشكل صحيح
+    configuration = {
+        'delete_harakat': False,
+        'support_ligatures': True,
+        'unshaped_to_shaped': True
+    }
+    reshaper = arabic_reshaper.ArabicReshaper(configuration=configuration)
+    
+    # 2. تشكيل النص (يصبح: طالب مبتدئ متصلة)
+    reshaped_text = reshaper.reshape(str(text))
+    
+    # 3. ترتيب الاتجاه (من اليمين لليسار)
     return get_display(reshaped_text)
-
+    
 async def generate_zidni_card(user_data, photo_url=None):
     # 1. تعريف المسارات بدقة
     base_path = "assets/fonts/"
