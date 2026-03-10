@@ -7,11 +7,12 @@ import json
 import re
 import io
 import difflib
+import requests
 import httpx  
 import aiohttp
 import arabic_reshaper
 from pilmoji import Pilmoji 
-from PIL import Image, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from bidi.algorithm import get_display
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -20,9 +21,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client 
 from PIL import Image, ImageFont
-
 # تصحيح مكتبة PIL (دمجناها في سطر واحد لمنع الخطأ)
-from PIL import Image, ImageDraw, ImageFont, ImageOps
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 # --- [ 1. إعدادات الهوية والاتصال ] ---
@@ -493,70 +492,141 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
         except Exception as e:
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
-
+# إصلاح اتجاه العربية
 def fix_arabic(text):
     if not text:
         return ""
+    return "\u200F" + str(text)
 
-    text = str(text)
 
-    reshaped_text = arabic_reshaper.reshape(text)
-    bidi_text = get_display(reshaped_text)
+# إصلاح اتجاه الأرقام
+def fix_number(text):
+    return "\u200E" + str(text)
 
-    return bidi_text
-    
+
 async def generate_zidni_card(user_data, photo_url=None):
-    # 1. تعريف المسارات بدقة
+
     base_path = "assets/fonts/"
+
     paths = {
-        "arabic": os.path.join(base_path, "font.ttf"),
-        "decor": os.path.join(base_path, "decor.ttf"),
-        "emoji": os.path.join(base_path, "emoji.ttf"),
+        "font": os.path.join(base_path, "font.ttf"),
         "card": "assets/images/zidni_card.png"
     }
 
-    # 2. فحص وجود الملفات
-    for key, path in paths.items():
+    for path in paths.values():
         if not os.path.exists(path):
-            print(f"❌ خطأ: ملف {key} مفقود في: {path}")
+            print(f"❌ الملف مفقود: {path}")
             return None
 
     try:
-        # 3. فتح القالب وتحميل الخطوط
+
         template = Image.open(paths["card"]).convert("RGBA")
-        font_main = ImageFont.truetype(paths["arabic"], 35)
-        font_info = ImageFont.truetype(paths["arabic"], 30)
 
-        # (ملاحظة: إذا كنت تضع كود رسم صورة البروفايل، ضعه هنا قبل بلوك Pilmoji)
+        font_main = ImageFont.truetype(paths["font"], 35)
+        font_info = ImageFont.truetype(paths["font"], 30)
 
-        # 4. الرسم باستخدام المحرك الذكي
+        # --------------------------------
+        # إضافة صورة البروفايل داخل الدائرة
+        # --------------------------------
+
+        if photo_url:
+
+            try:
+                response = requests.get(photo_url, timeout=10)
+                profile = Image.open(io.BytesIO(response.content)).convert("RGBA")
+
+                # تغيير الحجم
+                profile = profile.resize((220, 220))
+
+                # إنشاء قناع دائري
+                mask = Image.new("L", (220, 220), 0)
+                draw = ImageDraw.Draw(mask)
+                draw.ellipse((0, 0, 220, 220), fill=255)
+
+                # تطبيق القناع
+                profile.putalpha(mask)
+
+                # وضع الصورة في البطاقة
+                template.paste(profile, (120, 120), profile)
+
+            except:
+                print("⚠️ فشل تحميل صورة البروفايل")
+
+        # --------------------------------
+        # تجهيز البيانات
+        # --------------------------------
+
+        name = str(user_data.get("name", "غير معروف"))[:20]
+        rank = str(user_data.get("rank", "مبتدئ"))[:20]
+        wallet = user_data.get("wallet", 0)
+        acc_num = user_data.get("acc_num", "0000")
+
+        # --------------------------------
+        # الرسم على البطاقة
+        # --------------------------------
+
         with Pilmoji(template) as pilmoji:
+
             white = (255, 255, 255)
             gold = (212, 175, 55)
 
             # الاسم
-            pilmoji.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
-            
-            # الدولة (اليمن 🇾🇪)
-            pilmoji.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
-            
-            # الرتبة
-            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
-            
-            # الرصيد (المحفظة)
-            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
-            
-            # رقم الحساب (توسيط كامل mm في منتصف المستطيل السفلي)
-            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
+            pilmoji.text(
+                (685, 368),
+                fix_arabic(name),
+                font=font_main,
+                fill=white,
+                anchor="ra"
+            )
 
-        # 5. تحويل النتيجة لملف جاهز للإرسال
+            # الدولة
+            pilmoji.text(
+                (685, 458),
+                fix_arabic("اليمن 🇾🇪"),
+                font=font_info,
+                fill=gold,
+                anchor="ra"
+            )
+
+            # الرتبة
+            pilmoji.text(
+                (685, 548),
+                fix_arabic(rank),
+                font=font_info,
+                fill=white,
+                anchor="ra"
+            )
+
+            # الرصيد
+            pilmoji.text(
+                (685, 638),
+                fix_arabic(f"{wallet} ن"),
+                font=font_info,
+                fill=gold,
+                anchor="ra"
+            )
+
+            # رقم الحساب
+            pilmoji.text(
+                (435, 845),
+                fix_number(f"ZD-{acc_num}"),
+                font=font_info,
+                fill=white,
+                anchor="mm"
+            )
+
+        # --------------------------------
+        # إخراج الصورة
+        # --------------------------------
+
         output = io.BytesIO()
-        template.save(output, format='PNG')
+        template.save(output, format="PNG")
         output.seek(0)
+
         return output
 
     except Exception as e:
-        print(f"❌ العطل الحقيقي هو: {str(e)}")
+        print(f"❌ الخطأ: {e}")
         return None
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
