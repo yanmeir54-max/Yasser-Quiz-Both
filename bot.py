@@ -1086,25 +1086,25 @@ def get_shop_main_keyboard(user_id):
     )
     
     return keyboard
+
 # --- [ 3.5 دالة توليد أزرار المنتجات داخل الأقسام ] ---
 def get_products_keyboard(category, user_id):
-    """تقوم بجلب المنتجات من ITEMS_DB وتحويلها لأزرار محمية بآيدي المستخدم"""
+    """توليد أزرار المنتجات (الأسماء فقط) مع حماية الآيدي"""
     keyboard = InlineKeyboardMarkup(row_width=2)
     
     # جلب قائمة المنتجات الخاصة بالقسم المختار
     products = ITEMS_DB.get(category, {})
     
     for p_id, p_info in products.items():
-        # نص الزر: اسم المنتج + سعره
-        btn_text = f"{p_info['name']} | {p_info['price']}ن"
+        # تعديلك المطلوب: عرض اسم السلعة فقط بدون السعر
+        btn_text = f"{p_info['name']}"
         
-        # داتا الزر المشفرة: buy_ID_CATEGORY_USERID
-        # مثال: buy_king_royal_123456
+        # داتا الزر المشفرة (تأكد أن p_id هو المفتاح البرمجي وليس الاسم الطويل)
         btn_data = f"buy_{p_id}_{category}_{user_id}"
         
         keyboard.insert(InlineKeyboardButton(btn_text, callback_data=btn_data))
     
-    # زر العودة لواجهة المتجر الرئيسية (محمي بالآيدي أيضاً)
+    # زر العودة
     keyboard.add(InlineKeyboardButton("🔙 : الـعـودة لـلـقـائمة", callback_data=f"back_to_shop_{user_id}"))
     
     return keyboard
@@ -1118,6 +1118,7 @@ class Form(StatesGroup):
     waiting_for_ans2 = State()
     waiting_for_new_cat_name = State()
     waiting_for_quiz_name = State()
+
 # ==========================================
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
 # ==========================================
