@@ -1629,7 +1629,6 @@ async def cmd_transfer(message: types.Message):
     # تنفيذ التحويل
     response = await process_bank_transfer(message.from_user.id, amount, receiver_acc)
     await message.answer(response, parse_mode="HTML")
-
 # ==========================================
 # 2. تعديل أمر "تحكم" لضمان عدم العمل إلا بعد التفعيل
 # ==========================================
@@ -3359,67 +3358,61 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
 def is_answer_correct(user_msg, correct_ans):
     if not user_msg or not correct_ans: return False
 
-    # 1. قاموس "الكلمات المهملة" (Stop Words)
-    # كلمات يكتبها المستخدمون ولا تؤثر على معنى الإجابة
-    stop_words = ["هو", "هي", "ال", "انه", "انها", "يكون", "يعتبر", "اسمها", "اسمه"]
-
-    # 2. قاموس اللهجات (توسعة ذكية)
-    dialect_map = {
-        "جوال": "هاتف", "مويه": "ماء", "زلط": "نقود", "بيسات": "نقود",
-        "سياره": "عربه", "موتر": "عربه", "قاري": "عربه"
+    # 1. قاموس تحويل الأرقام (حل مشكلة 20 vs عشرين)
+    # ملاحظة: يمكنك توسعة هذا القاموس أو استخدام مكتبة مثل 'num2words'
+    num_map = {
+        "واحد": "1", "اثنان": "2", "اثنين": "2", "ثلاثه": "3", "اربع": "4", "اربعه": "4",
+        "خمسه": "5", "سته": "6", "سبعه": "7", "ثمانيه": "8", "تسعه": "9", "عشره": "10",
+        "عشرين": "20", "ثلاثين": "30", "اربعين": "40", "خمسين": "50", "ستين": "60",
+        "سبعين": "70", "ثمانين": "80", "تسعين": "90", "مائه": "100", "الف": "1000"
     }
 
+    stop_words = ["هو", "هي", "ال", "انه", "انها", "يكون", "يعتبر", "اسمها", "اسمه"]
+
     def clean_logic(text):
-        # أ. تنظيف التشكيل والرموز والمسافات
         text = text.strip().lower()
+        # تنظيف التشكيل
         text = re.sub(r'[\u064B-\u0652]', '', text) 
+        # توحيد الحروف الضعيفة (أهم خطوة لصنعاء وصنغاء)
         text = re.sub(r'[أإآ]', 'ا', text)
         text = re.sub(r'ة', 'ه', text)
         text = re.sub(r'ى', 'ي', text)
+        # إزالة الرموز وعلامات الترقيم
+        text = re.sub(r'[^\w\s]', '', text)
         
-        # ب. فكرة (1): حذف ال التعريف الزائدة (السيارة -> سياره)
-        # لكي لو كانت الإجابة "قمر" وكتب المستخدم "القمر" يحسبها صح
         words = text.split()
         cleaned_words = []
         for w in words:
-            # حذف "ال" التعريف إذا كانت الكلمة أطول من 4 حروف
+            # حذف ال التعريف إذا كانت الكلمة طويلة
             if w.startswith("ال") and len(w) > 4:
                 w = w[2:]
             
-            # ج. فكرة (2): تجاهل الكلمات المهملة
-            if w in stop_words: continue
+            # تحويل الرقم النصي إلى رقم حسابي (عشرين -> 20)
+            w = num_map.get(w, w)
             
-            # د. تحويل اللهجات
-            w = dialect_map.get(w, w)
+            if w in stop_words: continue
             cleaned_words.append(w)
             
-        return ''.join(cleaned_words) # ندمج الحروف تماماً للمقارنة القوية
+        return " ".join(cleaned_words) # نستخدم مسافة واحدة بدل الدمج الكلي لتحسين خوارزمية التشابه
 
     user_clean = clean_logic(user_msg)
     correct_clean = clean_logic(correct_ans)
 
-    # --- [ فكرة (3): معالجة الأرقام المكتوبة (عشرون vs 20) ] ---
-    # نستخدم ريجيكس لاستخراج أي أرقام للمقارنة
-    user_nums = re.findall(r'\d+', user_msg)
-    correct_nums = re.findall(r'\d+', correct_ans)
-    
-    # فكرة (4): "قفل الأرقام" (ثغرة 30 رمضان)
-    if correct_nums and not user_nums:
-        # إذا كانت الإجابة الأصلية فيها رقم والمستخدم لم يكتب رقماً.. نرفض فوراً
-        # إلا إذا كتب الرقم نصاً (ثلاثين) - سنعالجها بـ dialect_map لاحقاً
-        return False
-
-    # 1. التطابق التام بعد سحق المسافات والتعريف
+    # 1. التطابق التام (سريع)
     if user_clean == correct_clean:
         return True
 
-    # 2. فحص نسبة التشابه (ليكون رحيماً بالأخطاء المطبعية)
+    # 2. نظام التشابه المرن (Fuzzy Matching)
+    # تم تعديل النسبة إلى 0.80 كما طلبت (تعالج صنغاء ويناير/ياشر)
     similarity = difflib.SequenceMatcher(None, user_clean, correct_clean).ratio()
-    if similarity >= 0.82:
+    
+    # سجل تنبيه للمبرمج (اختياري) لمعرفة النسبة التي تحققت
+    # print(f"Similarity: {similarity} for {user_clean} vs {correct_clean}")
+
+    if similarity >= 0.80:
         return True
 
     return False
-
 # ==========================================
 # 🎯 رادار الإجابات الموحد (نسخة ياسر النهائية)
 # ==========================================
