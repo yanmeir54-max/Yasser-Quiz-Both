@@ -493,100 +493,97 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
 
-# --- إصلاح اتجاه العربية بلمستك الخاصة ---
+
+# --- 1. إصلاح اتجاه النصوص (حلك الذكي) ---
 def fix_arabic(text):
-    if not text:
-        return ""
-    return "\u200F" + str(text)
+    return "\u200F" + str(text) if text else ""
 
-# --- إصلاح اتجاه الأرقام ---
 def fix_number(text):
-    return "\u200E" + str(text)
+    return "\u200E" + str(text) if text else ""
 
-async def generate_zidni_card(user_data, bot=None, user_id=None):
-    base_path = "assets/fonts/"
-    paths = {
-        "font": os.path.join(base_path, "font.ttf"),
-        "card": "assets/images/zidni_card.png"
-    }
-
-    # فحص وجود الملفات
-    for path in paths.values():
-        if not os.path.exists(path):
-            print(f"❌ الملف مفقود: {path}")
-            return None
-
+# --- 2. دالة جلب ومعالجة صورة البروفايل (التي طلبتها) ---
+async def get_profile_img(bot, user_id):
     try:
-        # 1. فتح القالب الأساسي
-        template = Image.open(paths["card"]).convert("RGBA")
-        font_main = ImageFont.truetype(paths["font"], 35)
-        font_info = ImageFont.truetype(paths["font"], 30)
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count > 0:
+            file = await bot.get_file(photos.photos[0][-1].file_id)
+            url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        p_raw = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                        
+                        # تغيير الحجم والقص الدائري
+                        size = (220, 220)
+                        p_raw = p_raw.resize(size, Image.LANCZOS)
+                        mask = Image.new("L", size, 0)
+                        ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
+                        
+                        # إنشاء صورة نهائية مقصوصة
+                        output = Image.new("RGBA", size, (0, 0, 0, 0))
+                        output.paste(p_raw, (0, 0), mask)
+                        return output
+        return None
+    except Exception as e:
+        logging.warning(f"⚠️ خطأ في جلب الصورة: {e}")
+        return None
 
-        # 2. معالجة صورة البروفايل (جلب + قص دائري)
-        if bot and user_id:
-            try:
-                photos = await bot.get_user_profile_photos(user_id, limit=1)
-                if photos.total_count > 0:
-                    file_id = photos.photos[0][-1].file_id
-                    file = await bot.get_file(file_id)
-                    file_url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
+# --- 3. الدالة الرئيسية لتوليد البطاقة ---
+async def generate_zidni_card(user_id: int, bot, supabase):
+    try:
+        # جلب البيانات من Supabase
+        res = supabase.table("users_global_profile").select("*").eq("user_id", int(user_id)).execute()
+        if not res.data: return None
+        user_data = res.data[0]
 
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(file_url) as resp:
-                            if resp.status == 200:
-                                img_bytes = await resp.read()
-                                profile = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        # المسارات
+        base_path = "assets/fonts/"
+        card_path = "assets/images/zidni_card.png"
+        font_path = os.path.join(base_path, "font.ttf")
+        emoji_font_path = os.path.join(base_path, "emoji.ttf")
 
-                                # تغيير الحجم وتنعيم الحواف
-                                p_size = (220, 220)
-                                profile = profile.resize(p_size, Image.LANCZOS)
+        # فتح القالب والخطوط
+        template = Image.open(card_path).convert("RGBA")
+        font_main = ImageFont.truetype(font_path, 35)
+        font_info = ImageFont.truetype(font_path, 30)
 
-                                # إنشاء القناع الدائري الاحترافي
-                                mask = Image.new("L", p_size, 0)
-                                draw_mask = ImageDraw.Draw(mask)
-                                draw_mask.ellipse((0, 0, 220, 220), fill=255)
-                                
-                                # دمج الصورة داخل الدائرة (إحداثيات 120, 180)
-                                template.paste(profile, (120, 180), mask)
-            except Exception as e:
-                print(f"⚠️ فشل تحميل صورة المستخدم: {e}")
+        # --- وضع صورة البروفايل ---
+        profile_circle = await get_profile_img(bot, user_id)
+        if profile_circle:
+            # لصق الصورة في إحداثيات الدائرة بالبطاقة
+            template.paste(profile_circle, (120, 180), profile_circle)
 
-        # 3. تجهيز البيانات
-        name = str(user_data.get("name", "غير معروف"))[:20]
-        rank = str(user_data.get("rank", "مبتدئ"))[:20]
-        wallet = user_data.get("wallet", 0)
-        # تنسيق الرقم بفاصلة آلاف (هدية إضافية)
-        f_wallet = "{:,}".format(wallet) 
-        acc_num = user_data.get("acc_num", "0000")
-
-        # 4. الرسم على البطاقة باستخدام Pilmoji لدعم الزخارف
+        # --- الرسم باستخدام Pilmoji مع دعم الإيموجي ---
         with Pilmoji(template) as pilmoji:
-            white = (255, 255, 255)
-            gold = (212, 175, 55)
+            white, gold = (255, 255, 255), (212, 175, 55)
 
-            # الاسم (الإحداثيات كما في دليلك)
-            pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra")
-            
-            # الدولة
-            pilmoji.text((795, 280), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
-            
-            # الرتبة
-            pilmoji.text((795, 345), fix_arabic(rank), font=font_info, fill=white, anchor="ra")
-            
-            # الرصيد
-            pilmoji.text((795, 415), fix_arabic(f"{f_wallet} ن"), font=font_info, fill=gold, anchor="ra")
-            
-            # رقم الحساب (ZD-0000) في المنتصف
-            pilmoji.text((585, 570), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+            name = user_data.get("user_name", "غير معروف")
+            rank = f"{user_data.get('educational_rank', 'طالب')} {user_data.get('specialty_title', 'هاوي')}"
+            wallet = user_data.get("wallet", 0)
+            acc_num = user_data.get("bank_account", "0000")
 
-        # 5. تصدير النتيجة النهائية
+            # الرسم بالمحاذاة لليمين ودعم خط الإيموجي المخصص
+            params = {"font": font_info, "emoji_fontpath": emoji_font_path, "anchor": "ra"}
+            
+            # 1. الاسم (بخط أكبر)
+            pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_font_path)
+            # 2. الدولة
+            pilmoji.text((795, 280), fix_arabic("اليمن 🇾🇪"), fill=gold, **params)
+            # 3. الرتبة
+            pilmoji.text((795, 345), fix_arabic(rank), fill=white, **params)
+            # 4. الرصيد
+            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), fill=gold, **params)
+            # 5. رقم الحساب (توسيط)
+            pilmoji.text((585, 570), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm", emoji_fontpath=emoji_font_path)
+
         output = io.BytesIO()
         template.save(output, format="PNG")
         output.seek(0)
         return output
 
     except Exception as e:
-        print(f"❌ خطأ في معالجة البطاقة: {e}")
+        logging.error(f"❌ خطأ فني: {e}")
         return None
 
 # ==========================================
