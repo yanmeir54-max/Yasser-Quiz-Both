@@ -572,7 +572,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # الاسم
             pilmoji.text(
-                (795, 200),
+                (795, 210),
                 fix_arabic(name),
                 font=font_main,
                 fill=white,
@@ -582,7 +582,7 @@ async def generate_zidni_card(user_data, photo_url=None):
             # الدولة
             pilmoji.text(
                 (795, 280),
-                fix_arabic("اليمن 🇾🇪"),
+                fix_arabic("اليمن   🇾🇪"),
                 font=font_info,
                 fill=gold,
                 anchor="ra"
@@ -608,7 +608,7 @@ async def generate_zidni_card(user_data, photo_url=None):
 
             # رقم الحساب
             pilmoji.text(
-                (635, 590),
+                (585, 570),
                 fix_number(f"ZD-{acc_num}"),
                 font=font_info,
                 fill=white,
