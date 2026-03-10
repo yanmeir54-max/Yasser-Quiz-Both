@@ -584,8 +584,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
 
     except Exception as e:
         logging.error(f"❌ خطأ فني: {e}")
-        return None
-
+        return output, user_data  # نعيد الصورة والبيانات سوا
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
@@ -1223,80 +1222,51 @@ class Form(StatesGroup):
 # ==========================================
 @dp.message_handler(lambda message: message.text and (message.text.startswith('حسابي') or message.text.startswith('حسابه')))
 async def get_user_bank_card(message: types.Message):
-    # 1. تحديد الشخص المستهدف بناءً على الكلمة والرد
-    if message.text.startswith('حسابه'):
-        if message.reply_to_message:
-            target_user = message.reply_to_message.from_user
-        else:
-            return await message.reply("⚠️ عزيزي، يجب أن ترد على رسالة الشخص لكي أظهر لك 'حسابه'!")
-    else:
-        # إذا كتب "حسابي" (حتى لو كان هناك رد، سيعرض حسابه هو)
-        target_user = message.from_user
+    # 1. تحديد المستهدف
+    target_user = message.reply_to_message.from_user if message.text.startswith('حسابه') and message.reply_to_message else message.from_user
+    
+    if message.text.startswith('حسابه') and not message.reply_to_message:
+        return await message.reply("⚠️ رد على رسالته أولاً!")
 
-    user_id = target_user.id
-    status_msg = await message.reply("⏳ **جاري مراجعة القيود في بنك زدني...**", parse_mode="Markdown")
+    status_msg = await message.reply("⏳ **جاري مراجعة سجلات بنك زدني...**", parse_mode="Markdown")
 
     try:
-        # 2. جلب البيانات من سوبابيس
-        response = supabase.table("users_global_profile") \
-            .select("user_name, wallet, educational_rank, bank_account") \
-            .eq("user_id", user_id) \
-            .single() \
-            .execute()
+        # 2. استدعاء الدالة (تأكد أنها تعيد القيمة والبيانات الآن)
+        result = await generate_zidni_card(target_user.id, bot, supabase)
 
-        user_db = response.data
+        if result:
+            card_image, user_db = result # تفكيك النتيجة (الصورة + البيانات)
+            
+            # 3. تجهيز الكابشن الفخم باستخدام بيانات القاعدة
+            name = user_db.get('user_name', target_user.full_name)
+            acc_num = user_db.get('bank_account', '0000')
+            wallet = user_db.get('wallet', 0)
+            rank = user_db.get('educational_rank', 'عضو')
 
-        if not user_db:
-            await status_msg.delete()
-            return await message.reply("❌ هذا المستخدم غير مسجل في سجلاتنا البنكية.")
-
-        # 3. تجهيز البيانات وتصحيح اللغة العربية للبطاقة
-        # ملاحظة: نستخدم fix_arabic هنا لضمان ظهور الاسم والترتبة بشكل صحيح داخل الصورة
-        user_info = {
-            'name': user_db.get('user_name', target_user.full_name),
-            'rank': user_db.get('educational_rank', 'عضو'),
-            'wallet': user_db.get('wallet', 0),
-            'acc_num': user_db.get('bank_account', '0000'),
-            'country': "اليمن 🇾🇪"
-        }
-
-        # 4. جلب صورة البروفايل
-        photo_url = None
-        try:
-            user_photos = await target_user.get_profile_photos()
-            if user_photos.total_count > 0:
-                file = await bot.get_file(user_photos.photos[0][-1].file_id)
-                photo_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-        except:
-            pass
-
-        # 5. توليد البطاقة عبر دالة "المصنع"
-        card_image = await generate_zidni_card(user_info, photo_url)
-
-        await status_msg.delete()
-
-        if card_image:
-            # 6. إرسال النتيجة النهائية
-            # هنا نستخدم الاسم العادي بدون fix_arabic لأن التلجرام يدعم العربية طبيعي
             caption = (
                 f"🏦 **بطاقة بنك زدني الرسمية**\n"
-                f"👤 **الاسم:** {user_info['name']}\n"
-                f"💳 **رقم الحساب:** `ZD-{user_info['acc_num']}`"
+                f"━━━━━━━━━━━━━━\n"
+                f"👤 **الاسم:** {name}\n"
+                f"🎖️ **الرتبة:** {rank}\n"
+                f"💰 **الرصيد:** {wallet:,} ن\n"
+                f"💳 **رقم الحساب:** `ZD-{acc_num}`\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"✨ **حالة الحساب:** نشط ✅"
             )
+
+            await status_msg.delete()
             await message.answer_photo(
                 photo=card_image,
                 caption=caption,
                 parse_mode="Markdown"
             )
         else:
-            await message.reply("⚠️ حدث خطأ فني أثناء طباعة البطاقة.")
+            await status_msg.edit_text("❌ هذا المستخدم غير مسجل في سجلاتنا.")
 
     except Exception as e:
-        print(f"Error: {e}")
-        if 'status_msg' in locals():
-            await status_msg.edit_text("❌ عذراً، هنالك مشكلة في الوصول لقاعدة البيانات.")
+        print(f"❌ Error: {e}")
+        await status_msg.edit_text("⚠️ عذراً، حدث خطأ فني غير متوقع.")
             
-
 # ==========================================
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
 # ==========================================
