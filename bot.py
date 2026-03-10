@@ -1322,74 +1322,97 @@ async def shop_navigation_handler(call: types.CallbackQuery):
         # إذا حصل خطأ، سنطبع السبب الحقيقي في الكونسول لنعرفه
         await call.answer(f"❌ : خطأ برمي: {e}")
 # ==========================================
+# ................. الشراء....................
+# ==========================================
 @dp.callback_query_handler(lambda c: c.data.startswith('buy_'), state="*")
-async def handle_purchase(call: types.CallbackQuery):
+async def handle_purchase_confirmation(call: types.CallbackQuery):
     user_id = call.from_user.id
-    # تفكيك الداتا: buy_king_royal_1234567
     parts = call.data.split('_')
-    item_id = parts[1]      # معرف المنتج (مثلاً: king)
-    category = parts[2]     # القسم (مثلاً: royal أو cards)
-    owner_id = int(parts[3]) # صاحب الطلب
+    item_id, category, owner_id = parts[1], parts[2], int(parts[3])
 
-    # 🛡️ حماية: التأكد أن المشتري هو صاحب اللوحة
     if user_id != owner_id:
-        return await call.answer("🚫 : المتجر ليس لك! اطلب /متجر خاص بك.", show_alert=True)
+        return await call.answer("🚫 : المتجر ليس لك!", show_alert=True)
 
-    # 1. جلب بيانات المنتج من ITEMS_DB
     product = ITEMS_DB.get(category, {}).get(item_id)
-    if not product:
-        return await call.answer("⚠️ : المنتج غير متوفر حالياً!", show_alert=True)
+    if not product: return await call.answer("⚠️ : المنتج غير متوفر!")
 
+    item_name = product['name']
+    price = product['price']
+
+    # كيبورد التأكيد (نعم و تراجع فقط)
+    confirm_kb = InlineKeyboardMarkup(row_width=2)
+    confirm_kb.add(
+        InlineKeyboardButton("✅ نعم، شراء", callback_data=f"confbuy_{item_id}_{category}_{user_id}"),
+        InlineKeyboardButton("🔙 تراجع", callback_data=f"open_cat_{category}_{user_id}")
+    )
+
+    confirm_text = (
+        f"<b>🛒 تأكيد عملية الشراء</b>\n"
+        f"— — — — — — — — — —\n"
+        f"📦 السلعة: <b>{item_name}</b>\n"
+        f"💰 الثمن: <code>{price}</code> ن\n"
+        f"— — — — — — — — — —\n"
+        f"⚠️ هل أنت متأكد من رغبتك في الشراء؟"
+    )
+
+    await call.message.edit_text(confirm_text, reply_markup=confirm_kb, parse_mode="HTML")
+
+# --- [ معالج التنفيذ الفعلي بعد الضغط على نعم ] ---
+@dp.callback_query_handler(lambda c: c.data.startswith('confbuy_'), state="*")
+async def execute_actual_purchase(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    parts = call.data.split('_')
+    item_id, category, owner_id = parts[1], parts[2], int(parts[3])
+
+    product = ITEMS_DB.get(category, {}).get(item_id)
     price = product['price']
     item_name = product['name']
 
-    try:
-        # 2. جلب بيانات المستخدم الحالية من سوبابيس
-        res = supabase.table("users_global_profile").select("*").eq("user_id", user_id).execute()
-        if not res.data:
-            return await call.answer("❌ : لم يتم العثور على ملفك الشخصي!", show_alert=True)
+    # جلب بيانات المستخدم
+    res = supabase.table("users_global_profile").select("*").eq("user_id", user_id).execute()
+    user_data = res.data[0]
+    wallet = user_data.get('wallet', 0)
+
+    if wallet < price:
+        return await call.answer(f"❌ رصيدك {wallet}ن لا يكفي!", show_alert=True)
+
+    # تجهيز المخازن
+    current_titles = user_data.get('titles') or []
+    current_inventory = user_data.get('inventory') or []
+    current_cards = user_data.get('cards_inventory') or {}
+
+    update_payload = {"wallet": wallet - price}
+
+    # --- [ منطق التوزيع الذكي ] ---
+    if category == "cards":
+        # إضافة الكروت لـ cards_inventory بالعدد
+        current_cards[item_id] = current_cards.get(item_id, 0) + 1
+        update_payload["cards_inventory"] = current_cards
+    
+    elif category in ["gifts", "rare", "estates"]:
+        # إضافة المقتنيات لـ inventory
+        if item_name in current_inventory:
+            return await call.answer(f"📦 تملك {item_name} مسبقاً!", show_alert=True)
+        current_inventory.append(item_name)
+        update_payload["inventory"] = current_inventory
         
-        user_data = res.data[0]
-        wallet = user_data.get('wallet', 0)
-        current_titles = user_data.get('titles') or []
-        current_cards = user_data.get('cards_inventory') or {}
+    else: # الألقاب (royal, girls)
+        # إضافة الألقاب لـ titles
+        if item_name in current_titles:
+            return await call.answer(f"👑 تملك لقب {item_name} مسبقاً!", show_alert=True)
+        current_titles.append(item_name)
+        update_payload["titles"] = current_titles
 
-        # 3. فحص الرصيد
-        if wallet < price:
-            return await call.answer(f"💸 : رصيدك {wallet}ن لا يكفي! تحتاج {price - wallet}ن إضافية.", show_alert=True)
+    # حفظ في سوبابيس
+    supabase.table("users_global_profile").update(update_payload).eq("user_id", user_id).execute()
 
-        # 4. فحص إذا كان يملك اللقب مسبقاً (للألقاب فقط)
-        if category != "cards" and item_name in current_titles:
-            return await call.answer(f"👑 : أنت تملك لقب [{item_name}] بالفعل!", show_alert=True)
+    # رسالة طائرة في نصف الشاشة
+    await call.answer(f"🎉 مبروك! اشتريت {item_name}\nرصيدك المتبقي: {wallet-price}ن", show_alert=True)
 
-        # 5. تنفيذ عملية الخصم والتحديث
-        new_wallet = wallet - price
-        update_data = {"wallet": new_wallet}
-
-        if category == "cards":
-            # تحديث عداد الكروت (نزيد الكرت بمقدار 1)
-            current_cards[item_id] = current_cards.get(item_id, 0) + 1
-            update_data["cards_inventory"] = current_cards
-        else:
-            # إضافة اللقب للمصفوفة
-            current_titles.append(item_name)
-            update_data["titles"] = current_titles
-
-        # 6. حفظ البيانات في سوبابيس
-        supabase.table("users_global_profile").update(update_data).eq("user_id", user_id).execute()
-
-        # 🎉 نجاح العملية
-        await call.answer(f"✅ : تم شراء {item_name} بنجاح!", show_alert=True)
-        
-        # تحديث الرسالة لعرض الرصيد الجديد
-        new_text = await format_shop_bazaar_card(new_wallet)
-        await call.message.edit_text(new_text, reply_markup=get_shop_main_keyboard(user_id), parse_mode="HTML")
-
-    except Exception as e:
-        import logging
-        logging.error(f"Purchase Error: {e}")
-        await call.answer("❌ : حدث خطأ أثناء معالجة الشراء!")
-# ==========================================
+    # العودة للمتجر الرئيسي
+    new_text = f"✨ <b>تمت العملية بنجاح!</b>\nمحفظتك الآن: <code>{wallet-price}</code> ن"
+    await call.message.edit_text(new_text, reply_markup=get_shop_main_keyboard(user_id), parse_mode="HTML")
+    
 # 6. أمر التفعيل (Request Activation)
 # ==========================================
 @dp.message_handler(lambda m: m.text == "تفعيل", chat_type=[types.ChatType.GROUP, types.ChatType.SUPERGROUP])
