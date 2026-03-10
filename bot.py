@@ -7,8 +7,7 @@ import json
 import re
 import io
 import difflib
-import random
-import httpx  # الطريقة الأسرع والأكثر أماناً للتعامل مع API الذكاء الاصطناعي
+import httpx  
 import aiohttp
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -17,9 +16,10 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from supabase import create_client, Client  # تم تصحيح الكلمة لضمان الربط مع Supabase
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from supabase import create_client, Client 
 
+# تصحيح مكتبة PIL (دمجناها في سطر واحد لمنع الخطأ)
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 # --- [ 1. إعدادات الهوية والاتصال ] ---
