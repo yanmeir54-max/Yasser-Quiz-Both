@@ -500,35 +500,38 @@ def fix_arabic(text):
 
 def fix_number(text):
     return "\u200E" + str(text) if text else ""
-
-# --- 2. دالة جلب ومعالجة صورة البروفايل (التي طلبتها) ---
+# --- دالة جلب الصورة المعدلة لتناسب Aiogram 3 ---
 async def get_profile_img(bot, user_id):
     try:
         photos = await bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count > 0:
-            file = await bot.get_file(photos.photos[0][-1].file_id)
-            url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
+            # 1. جلب معلومات الملف
+            file_id = photos.photos[0][-1].file_id
+            file = await bot.get_file(file_id)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        p_raw = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
-                        
-                        # تغيير الحجم والقص الدائري
-                        size = (220, 220)
-                        p_raw = p_raw.resize(size, Image.LANCZOS)
-                        mask = Image.new("L", size, 0)
-                        ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
-                        
-                        # إنشاء صورة نهائية مقصوصة
-                        output = Image.new("RGBA", size, (0, 0, 0, 0))
-                        output.paste(p_raw, (0, 0), mask)
-                        return output
+            # 2. استخدام io.BytesIO لتحميل الصورة مباشرة بدون بناء URL يدوياً
+            # هذه الطريقة أضمن وتتجاوز خطأ 'Bot' object has no attribute 'token'
+            photo_bytes = io.BytesIO()
+            await bot.download_file(file.file_path, destination=photo_bytes)
+            photo_bytes.seek(0)
+
+            # 3. معالجة الصورة بـ Pillow
+            p_raw = Image.open(photo_bytes).convert("RGBA")
+            size = (220, 220)
+            p_raw = p_raw.resize(size, Image.LANCZOS)
+            
+            # القص الدائري
+            mask = Image.new("L", size, 0)
+            ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
+            
+            output = Image.new("RGBA", size, (0, 0, 0, 0))
+            output.paste(p_raw, (0, 0), mask)
+            return output
+            
         return None
     except Exception as e:
         logging.warning(f"⚠️ خطأ في جلب الصورة: {e}")
         return None
-
 # --- 3. الدالة الرئيسية لتوليد البطاقة ---
 async def generate_zidni_card(user_id: int, bot, supabase):
     try:
