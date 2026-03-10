@@ -19,6 +19,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client 
+from PIL import Image, ImageFont
 
 # تصحيح مكتبة PIL (دمجناها في سطر واحد لمنع الخطأ)
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -494,28 +495,38 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             
 
 # --- دالة الإصلاح القوية ---
+def fix_arabic(text):
+    if not text: return ""
+    reshaped = arabic_reshaper.reshape(str(text))
+    return get_display(reshaped)
 
 async def generate_zidni_card(user_data, photo_url=None):
-    # المسارات التي أعددتها أنت
-    ARABIC_FONT_PATH = "assets/fonts/font.ttf"  # الخط العربي الأساسي
-    DECOR_FONT_PATH = "assets/fonts/decor.ttf"  # خط الزخارف الإنجليزية
-    EMOJI_FONT_PATH = "assets/fonts/emoji.ttf"  # خط الإيموجي الملون
-    
-    CARD_TEMPLATE = "assets/images/zidni_card.png"
+    # 1. تعريف المسارات بدقة
+    base_path = "assets/fonts/"
+    paths = {
+        "arabic": os.path.join(base_path, "font.ttf"),
+        "decor": os.path.join(base_path, "decor.ttf"),
+        "emoji": os.path.join(base_path, "emoji.ttf"),
+        "card": "assets/images/zidni_card.png"
+    }
+
+    # 2. التأكد من وجود الملفات قبل البدء (فحص أمني)
+    for key, path in paths.items():
+        if not os.path.exists(path):
+            print(f"❌ خطأ: ملف {key} مفقود في المسار: {path}")
+            return None
 
     try:
-        template = Image.open(CARD_TEMPLATE).convert("RGBA")
+        # فتح القالب
+        template = Image.open(paths["card"]).convert("RGBA")
         
-        # تحميل الخط العربي الأساسي
-        font_main = ImageFont.truetype(ARABIC_FONT_PATH, 35)
-        font_info = ImageFont.truetype(ARABIC_FONT_PATH, 30)
+        # تحميل الخط الأساسي
+        font_main = ImageFont.truetype(paths["arabic"], 35)
+        font_info = ImageFont.truetype(paths["arabic"], 30)
 
-        # --- المحرك الذكي ---
-        # نستخدم Pilmoji ونعطيه مسار خط الإيموجي ليدعمه
+        # 3. الرسم باستخدام المحرك الذكي Pilmoji
         with Pilmoji(template) as pilmoji:
-            # رسم الاسم المزخرف
-            # إذا كان فيه عربي سيأخذه من font.ttf 
-            # وإذا فيه رموز سيحاول المحرك جلبها من الملفات الأخرى أو رموز النظام
+            # رسم الاسم (يدعم الزخارف والإيموجي تلقائياً)
             pilmoji.text(
                 (685, 368), 
                 fix_arabic(user_data['name']), 
@@ -523,8 +534,8 @@ async def generate_zidni_card(user_data, photo_url=None):
                 fill=(255, 255, 255), 
                 anchor="ra"
             )
-
-            # رسم الدولة مع العلم الملون
+            
+            # رسم الدولة (اليمن 🇾🇪)
             pilmoji.text(
                 (685, 458), 
                 fix_arabic("اليمن 🇾🇪"), 
@@ -533,21 +544,20 @@ async def generate_zidni_card(user_data, photo_url=None):
                 anchor="ra"
             )
 
-            # باقي البيانات (الرتبة، الرصيد، رقم الحساب) بنفس الطريقة...
+            # الرتبة والرصيد ورقم الحساب
             pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=(255, 255, 255), anchor="ra")
             pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=(212, 175, 55), anchor="ra")
-            
-            # رقم الحساب ZD-0000
             pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=(255, 255, 255), anchor="mm")
 
-        # تحويل الصورة النهائية لإرسالها
+        # تحويل النتيجة لملف جاهز للإرسال
         output = io.BytesIO()
         template.save(output, format='PNG')
         output.seek(0)
         return output
 
     except Exception as e:
-        print(f"❌ خطأ في دمج الخطوط: {e}")
+        # هذا السطر سيطبع لك السبب الحقيقي للخطأ في شاشة البوت (Terminal)
+        print(f"❌ العطل الحقيقي هو: {str(e)}")
         return None
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
