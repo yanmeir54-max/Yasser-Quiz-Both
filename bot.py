@@ -503,8 +503,7 @@ def fix_arabic(text):
 def fix_number(text):
     return "\u200E" + str(text)
 
-
-async def generate_zidni_card(user_data, photo_url=None):
+async def generate_zidni_card(user_data, bot=None, user_id=None):
 
     base_path = "assets/fonts/"
 
@@ -526,31 +525,39 @@ async def generate_zidni_card(user_data, photo_url=None):
         font_info = ImageFont.truetype(paths["font"], 30)
 
         # --------------------------------
-        # إضافة صورة البروفايل داخل الدائرة
+        # إضافة صورة البروفايل داخل الدائرة من user_id
         # --------------------------------
 
-        if photo_url:
+        if bot and user_id:
 
             try:
-                response = requests.get(photo_url, timeout=10)
-                profile = Image.open(io.BytesIO(response.content)).convert("RGBA")
+                photos = await bot.get_user_profile_photos(user_id, limit=1)
+                if photos.total_count > 0:
+                    file_id = photos.photos[0][-1].file_id
+                    file = await bot.get_file(file_id)
+                    file_path = file.file_path
 
-                # تغيير الحجم
-                profile = profile.resize((220, 220))
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        file_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
+                        async with session.get(file_url) as resp:
+                            img_bytes = await resp.read()
+                            profile = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-                # إنشاء قناع دائري
-                mask = Image.new("L", (220, 220), 0)
-                draw = ImageDraw.Draw(mask)
-                draw.ellipse((0, 0, 220, 220), fill=255)
+                    # تغيير الحجم
+                    profile = profile.resize((220, 220))
 
-                # تطبيق القناع
-                profile.putalpha(mask)
+                    # إنشاء قناع دائري
+                    mask = Image.new("L", (220, 220), 0)
+                    draw = ImageDraw.Draw(mask)
+                    draw.ellipse((0, 0, 220, 220), fill=255)
+                    profile.putalpha(mask)
 
-                # وضع الصورة في البطاقة
-                template.paste(profile, (120, 180), profile)
+                    # وضع الصورة في البطاقة
+                    template.paste(profile, (120, 180), profile)
 
-            except:
-                print("⚠️ فشل تحميل صورة البروفايل")
+            except Exception as e:
+                print("⚠️ فشل تحميل صورة المستخدم:", e)
 
         # --------------------------------
         # تجهيز البيانات
@@ -628,6 +635,7 @@ async def generate_zidni_card(user_data, photo_url=None):
     except Exception as e:
         print(f"❌ الخطأ: {e}")
         return None
+
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
