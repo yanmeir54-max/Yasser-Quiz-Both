@@ -5,15 +5,21 @@ import time
 import os
 import json
 import re
+import io
 import difflib
 import random
 import httpx  # الطريقة الأسرع والأكثر أماناً للتعامل مع API الذكاء الاصطناعي
+import aiohttp
+import arabic_reshaper
+from bidi.algorithm import get_display
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client  # تم تصحيح الكلمة لضمان الربط مع Supabase
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 # --- [ 1. إعدادات الهوية والاتصال ] ---
@@ -484,6 +490,71 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
         except Exception as e:
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
+
+
+# --- دالة تصحيح الخط العربي (مهمة جداً) ---
+def fix_arabic(text):
+    if not text: return ""
+    # إعادة تشكيل الحروف العربية لتكون مشبكة
+    reshaped_text = arabic_reshaper.reshape(str(text))
+    # عكس الاتجاه لتناسب العرض من اليمين لليسار
+    return get_display(reshaped_text)
+
+# --- الخطوة الأولى: دالة المصنع ---
+async def generate_zidni_card(user_data, photo_url=None):
+    # مسارات الملفات (تأكد من وجود المجلدات في GitHub)
+    CARD_PATH = "assets/images/zidni_card.png"
+    FONT_PATH = "assets/fonts/font.ttf" # ملف الخط اللي رفعته
+
+    try:
+        # 1. فتح قالب البطاقة
+        template = Image.open(CARD_PATH).convert("RGBA")
+        draw = ImageDraw.Draw(template)
+        
+        # 2. تحميل الخطوط (حجم 35 للاسم و 30 للبقية)
+        font_main = ImageFont.truetype(FONT_PATH, 35)
+        font_info = ImageFont.truetype(FONT_PATH, 30)
+
+        # 3. معالجة صورة المستخدم (الافتار) ووضعها في الدائرة
+        if photo_url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(photo_url) as resp:
+                    if resp.status == 200:
+                        p_img = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                        size = (195, 195) # مقاس الدائرة في تصميمك
+                        p_img = ImageOps.fit(p_img, size, centering=(0.5, 0.5))
+                        mask = Image.new('L', size, 0)
+                        ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
+                        p_img.putalpha(mask)
+                        # لصق الصورة في إحداثيات الدائرة (تقريباً 65, 50)
+                        template.paste(p_img, (65, 50), p_img)
+
+        # 4. طباعة النصوص (استخدام fix_arabic لتصحيح اللغة)
+        white = (255, 255, 255) # لون أبيض
+        gold = (212, 175, 55)   # لون ذهبي
+
+        # [البيانات تعتمد على الأعمدة في جدولك]
+        # الاسم (المربع الأول)
+        draw.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
+        # الدولة (المربع الثاني - ثابتة أو متغيرة)
+        draw.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
+        # الرتبة (المربع الثالث - educational_rank)
+        draw.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
+        # المبلغ (المربع الرابع - wallet)
+        draw.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
+        # رقم الحساب (الشريط الأسفل - bank_account)
+        draw.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
+
+        # 5. تحويل الصورة لبايتات لإرسالها
+        output = io.BytesIO()
+        template.save(output, format='PNG')
+        output.seek(0)
+        return output
+
+    except Exception as e:
+        print(f"❌ خطأ في الدالة: {e}")
+        return None
+        
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
