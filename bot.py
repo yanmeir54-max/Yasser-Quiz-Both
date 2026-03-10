@@ -883,12 +883,12 @@ async def format_profile_card(user_data: dict, user_id: int):
     
     # --- [ قسم الكروت: تحديث المسميات وكل كرت في سطر ] ---
     card += "<b>🃏 : مـخـزن الـكـروت الـمـلـكـي :</b>\n"
-    card += f"🔍 <b>:</b> كرت إظهار حرف ⇠ [ <code>{cards.get('hint_letter', 0)}</code> ]\n"
-    card += f"💡 <b>:</b> كرت التلميح الكامل ⇠ [ <code>{cards.get('hint_full', 0)}</code> ]\n"
-    card += f"⏱️ <b>:</b> كرت زيادة الوقت ⇠ [ <code>{cards.get('add_time', 0)}</code> ]\n"
-    card += f"🎯 <b>:</b> كرت كشف الإجابة ⇠ [ <code>{cards.get('reveal_ans', 0)}</code> ]\n"
-    card += f"💰 <b>:</b> كرت المضاعفة x2 ⇠ [ <code>{cards.get('double_coin', 0)}</code> ]\n"
-    card += f"🛡️ <b>:</b> كرت حماية الدرع ⇠ [ <code>{cards.get('shield_up', 0)}</code> ]\n"
+    card += f"🔍 <b>:</b> كرت إظهار حرف ⇠ [ <code>{cards.get('letter', 0)}</code> ]\n"
+    card += f"💡 <b>:</b> كرت التلميح الكامل ⇠ [ <code>{cards.get('full', 0)}</code> ]\n"
+    card += f"⏱️ <b>:</b> كرت زيادة الوقت ⇠ [ <code>{cards.get('time', 0)}</code> ]\n"
+    card += f"🎯 <b>:</b> كرت كشف الإجابة ⇠ [ <code>{cards.get('reveal', 0)}</code> ]\n"
+    card += f"💰 <b>:</b> كرت المضاعفة x2 ⇠ [ <code>{cards.get('double', 0)}</code> ]\n"
+    card += f"🛡️ <b>:</b> كرت حماية الدرع ⇠ [ <code>{cards.get('shield', 0)}</code> ]\n"
     card += "<b>— — — — — — — — — — — —</b>\n"
 
     # --- [ قسم المقتنيات: كل مقتنى في سطر ] ---
