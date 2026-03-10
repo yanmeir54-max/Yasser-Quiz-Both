@@ -550,7 +550,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
         # 3. جلب ووضع صورة البروفايل
         profile_circle = await get_profile_img(bot, user_id)
         if profile_circle:
-            template.paste(profile_circle, (82, 68), profile_circle)
+            template.paste(profile_circle, (82, 65), profile_circle)
 
         # 4. تجهيز البيانات النصية
         name = str(user_db.get("user_name", "غير معروف"))[:20]
@@ -567,7 +567,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             # الاسم
             pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_path)
             # الدولة
-            pilmoji.text((795, 280), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
+            pilmoji.text((795, 280), fix_arabic("اليمن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # الرتبة
             pilmoji.text((795, 345), fix_arabic(rank), font=font_info, fill=white, anchor="ra", emoji_fontpath=emoji_path)
             # الرصيد
