@@ -492,45 +492,40 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             
 
 # --- دالة الإصلاح القوية ---
-def fix_arabic(text):
-    if not text: return ""
-    # تنظيف وتشكيل وعكس النص في خطوة واحدة
-    text = str(text)
-    reshaped = arabic_reshaper.reshape(text) # لشبك الحروف
-    bidi_text = get_display(reshaped)       # لضبط الاتجاه من اليمين لليسار
-    return bidi_text
+from pilmoji import Pilmoji # المكتبة السحرية للإيموجي والزخارف
 
 async def generate_zidni_card(user_data, photo_url=None):
     CARD_PATH = "assets/images/zidni_card.png"
-    FONT_PATH = "assets/fonts/font.ttf" # تأكد أنه ملف NotoSansArabic-Bold
+    FONT_PATH = "assets/fonts/font.ttf" # يجب أن يكون NotoSansArabic-Bold
 
     try:
         template = Image.open(CARD_PATH).convert("RGBA")
-        draw = ImageDraw.Draw(template)
         
-        # تحميل الخط
+        # تحميل الخطوط
         font_main = ImageFont.truetype(FONT_PATH, 35)
         font_info = ImageFont.truetype(FONT_PATH, 30)
 
-        # (كود معالجة صورة البروفايل يبقى كما هو...)
+        # [هنا كود معالجة صورة البروفايل]
 
-        # --- الجزء الحاسم: طباعة النصوص بصيغة fix_arabic ---
-        # لاحظ استخدام anchor="ra" (Right-Aligned) لتثبيت النص من اليمين
-        
-        # الاسم
-        draw.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=(255,255,255), anchor="ra")
-        
-        # الدولة (اليمن 🇾🇪)
-        draw.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=(212, 175, 55), anchor="ra")
-        
-        # الرتبة
-        draw.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=(255,255,255), anchor="ra")
-        
-        # المبلغ
-        draw.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=(212, 175, 55), anchor="ra")
-        
-        # رقم الحساب (في المنتصف mm)
-        draw.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=(255,255,255), anchor="mm")
+        # --- السر هنا: استخدام Pilmoji بدلاً من ImageDraw ---
+        with Pilmoji(template) as pilmoji:
+            white = (255, 255, 255)
+            gold = (212, 175, 55)
+
+            # الاسم (يدعم الزخارف والإيموجي الملون)
+            pilmoji.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
+            
+            # الدولة
+            pilmoji.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
+            
+            # الرتبة
+            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
+            
+            # الرصيد
+            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
+            
+            # رقم الحساب
+            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
 
         output = io.BytesIO()
         template.save(output, format='PNG')
@@ -538,9 +533,8 @@ async def generate_zidni_card(user_data, photo_url=None):
         return output
 
     except Exception as e:
-        print(f"❌ Error during drawing: {e}")
+        print(f"❌ خطأ حقيقي في الرسم: {e}")
         return None
-
         
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
