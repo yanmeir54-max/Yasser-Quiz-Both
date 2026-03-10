@@ -551,7 +551,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
         # 3. جلب ووضع صورة البروفايل
         profile_circle = await get_profile_img(bot, user_id)
         if profile_circle:
-            template.paste(profile_circle, (120, 180), profile_circle)
+            template.paste(profile_circle, (110, 150), profile_circle)
 
         # 4. تجهيز البيانات النصية
         name = str(user_db.get("user_name", "غير معروف"))[:20]
