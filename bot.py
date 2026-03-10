@@ -492,102 +492,101 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
         except Exception as e:
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
-
-
-# --- 1. إصلاح اتجاه النصوص (حلك الذكي) ---
+# --- إصلاح اتجاه النصوص (حلك الذكي) ---
 def fix_arabic(text):
     return "\u200F" + str(text) if text else ""
 
 def fix_number(text):
     return "\u200E" + str(text) if text else ""
-# --- دالة جلب الصورة المعدلة لتناسب Aiogram 3 ---
+
+
+# --- دالة جلب صورة البروفايل ومعالجتها (الحل السريع لـ Aiogram) ---
 async def get_profile_img(bot, user_id):
     try:
         photos = await bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count > 0:
-            # 1. جلب معلومات الملف
             file_id = photos.photos[0][-1].file_id
             file = await bot.get_file(file_id)
             
-            # 2. استخدام io.BytesIO لتحميل الصورة مباشرة بدون بناء URL يدوياً
-            # هذه الطريقة أضمن وتتجاوز خطأ 'Bot' object has no attribute 'token'
             photo_bytes = io.BytesIO()
             await bot.download_file(file.file_path, destination=photo_bytes)
             photo_bytes.seek(0)
 
-            # 3. معالجة الصورة بـ Pillow
             p_raw = Image.open(photo_bytes).convert("RGBA")
             size = (220, 220)
             p_raw = p_raw.resize(size, Image.LANCZOS)
             
-            # القص الدائري
             mask = Image.new("L", size, 0)
             ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
             
             output = Image.new("RGBA", size, (0, 0, 0, 0))
             output.paste(p_raw, (0, 0), mask)
             return output
-            
         return None
     except Exception as e:
-        logging.warning(f"⚠️ خطأ في جلب الصورة: {e}")
+        logging.warning(f"⚠️ فشل جلب صورة المستخدم {user_id}: {e}")
         return None
-# --- 3. الدالة الرئيسية لتوليد البطاقة ---
+
+# --- الدالة الرئيسية لتوليد البطاقة ---
 async def generate_zidni_card(user_id: int, bot, supabase):
+    base_path = "assets/fonts/"
+    paths = {
+        "font": os.path.join(base_path, "font.ttf"),
+        "emoji": os.path.join(base_path, "emoji.ttf"),
+        "card": "assets/images/zidni_card.png"
+    }
+
     try:
-        # جلب البيانات من Supabase
+        # 1. جلب البيانات من Supabase
         res = supabase.table("users_global_profile").select("*").eq("user_id", int(user_id)).execute()
-        if not res.data: return None
-        user_data = res.data[0]
+        if not res.data:
+            return None, None
+        user_db = res.data[0]
 
-        # المسارات
-        base_path = "assets/fonts/"
-        card_path = "assets/images/zidni_card.png"
-        font_path = os.path.join(base_path, "font.ttf")
-        emoji_font_path = os.path.join(base_path, "emoji.ttf")
+        # 2. فتح القالب والخطوط
+        template = Image.open(paths["card"]).convert("RGBA")
+        font_main = ImageFont.truetype(paths["font"], 35)
+        font_info = ImageFont.truetype(paths["font"], 30)
 
-        # فتح القالب والخطوط
-        template = Image.open(card_path).convert("RGBA")
-        font_main = ImageFont.truetype(font_path, 35)
-        font_info = ImageFont.truetype(font_path, 30)
-
-        # --- وضع صورة البروفايل ---
+        # 3. جلب ووضع صورة البروفايل
         profile_circle = await get_profile_img(bot, user_id)
         if profile_circle:
-            # لصق الصورة في إحداثيات الدائرة بالبطاقة
             template.paste(profile_circle, (120, 180), profile_circle)
 
-        # --- الرسم باستخدام Pilmoji مع دعم الإيموجي ---
+        # 4. تجهيز البيانات النصية
+        name = str(user_db.get("user_name", "غير معروف"))[:20]
+        rank = f"{user_db.get('educational_rank', 'طالب')} {user_db.get('specialty_title', 'هاوي')}"
+        wallet = user_db.get("wallet", 0)
+        acc_num = user_db.get("bank_account", "0000")
+
+        # 5. الرسم على البطاقة (بإحداثياتك المعتمدة)
         with Pilmoji(template) as pilmoji:
             white, gold = (255, 255, 255), (212, 175, 55)
+            # نمرر مسار خط الإيموجي لضمان ظهور علم اليمن والرموز
+            emoji_path = paths["emoji"] if os.path.exists(paths["emoji"]) else None
 
-            name = user_data.get("user_name", "غير معروف")
-            rank = f"{user_data.get('educational_rank', 'طالب')} {user_data.get('specialty_title', 'هاوي')}"
-            wallet = user_data.get("wallet", 0)
-            acc_num = user_data.get("bank_account", "0000")
+            # الاسم
+            pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_path)
+            # الدولة
+            pilmoji.text((795, 280), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
+            # الرتبة
+            pilmoji.text((795, 345), fix_arabic(rank), font=font_info, fill=white, anchor="ra", emoji_fontpath=emoji_path)
+            # الرصيد
+            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
+            # رقم الحساب
+            pilmoji.text((585, 570), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
 
-            # الرسم بالمحاذاة لليمين ودعم خط الإيموجي المخصص
-            params = {"font": font_info, "emoji_fontpath": emoji_font_path, "anchor": "ra"}
-            
-            # 1. الاسم (بخط أكبر)
-            pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_font_path)
-            # 2. الدولة
-            pilmoji.text((795, 280), fix_arabic("اليمن 🇾🇪"), fill=gold, **params)
-            # 3. الرتبة
-            pilmoji.text((795, 345), fix_arabic(rank), fill=white, **params)
-            # 4. الرصيد
-            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), fill=gold, **params)
-            # 5. رقم الحساب (توسيط)
-            pilmoji.text((585, 570), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm", emoji_fontpath=emoji_font_path)
-
+        # 6. إخراج الصورة والبيانات (للكابشن)
         output = io.BytesIO()
         template.save(output, format="PNG")
         output.seek(0)
-        return output
+        
+        return output, user_db
 
     except Exception as e:
-        logging.error(f"❌ خطأ فني: {e}")
-        return output, user_data  # نعيد الصورة والبيانات سوا
+        logging.error(f"❌ خطأ في generate_zidni_card: {e}")
+        return None, None
+
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
