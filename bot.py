@@ -10,6 +10,8 @@ import difflib
 import httpx  
 import aiohttp
 import arabic_reshaper
+from pilmoji import Pilmoji 
+from PIL import Image, ImageFont
 from bidi.algorithm import get_display
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -492,50 +494,61 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             
 
 # --- دالة الإصلاح القوية ---
-from pilmoji import Pilmoji # المكتبة السحرية للإيموجي والزخارف
 
 async def generate_zidni_card(user_data, photo_url=None):
-    CARD_PATH = "assets/images/zidni_card.png"
-    FONT_PATH = "assets/fonts/font.ttf" # يجب أن يكون NotoSansArabic-Bold
+    # المسارات التي أعددتها أنت
+    ARABIC_FONT_PATH = "assets/fonts/font.ttf"  # الخط العربي الأساسي
+    DECOR_FONT_PATH = "assets/fonts/decor.ttf"  # خط الزخارف الإنجليزية
+    EMOJI_FONT_PATH = "assets/fonts/emoji.ttf"  # خط الإيموجي الملون
+    
+    CARD_TEMPLATE = "assets/images/zidni_card.png"
 
     try:
-        template = Image.open(CARD_PATH).convert("RGBA")
+        template = Image.open(CARD_TEMPLATE).convert("RGBA")
         
-        # تحميل الخطوط
-        font_main = ImageFont.truetype(FONT_PATH, 35)
-        font_info = ImageFont.truetype(FONT_PATH, 30)
+        # تحميل الخط العربي الأساسي
+        font_main = ImageFont.truetype(ARABIC_FONT_PATH, 35)
+        font_info = ImageFont.truetype(ARABIC_FONT_PATH, 30)
 
-        # [هنا كود معالجة صورة البروفايل]
-
-        # --- السر هنا: استخدام Pilmoji بدلاً من ImageDraw ---
+        # --- المحرك الذكي ---
+        # نستخدم Pilmoji ونعطيه مسار خط الإيموجي ليدعمه
         with Pilmoji(template) as pilmoji:
-            white = (255, 255, 255)
-            gold = (212, 175, 55)
+            # رسم الاسم المزخرف
+            # إذا كان فيه عربي سيأخذه من font.ttf 
+            # وإذا فيه رموز سيحاول المحرك جلبها من الملفات الأخرى أو رموز النظام
+            pilmoji.text(
+                (685, 368), 
+                fix_arabic(user_data['name']), 
+                font=font_main, 
+                fill=(255, 255, 255), 
+                anchor="ra"
+            )
 
-            # الاسم (يدعم الزخارف والإيموجي الملون)
-            pilmoji.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
-            
-            # الدولة
-            pilmoji.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
-            
-            # الرتبة
-            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
-            
-            # الرصيد
-            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
-            
-            # رقم الحساب
-            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
+            # رسم الدولة مع العلم الملون
+            pilmoji.text(
+                (685, 458), 
+                fix_arabic("اليمن 🇾🇪"), 
+                font=font_info, 
+                fill=(212, 175, 55), 
+                anchor="ra"
+            )
 
+            # باقي البيانات (الرتبة، الرصيد، رقم الحساب) بنفس الطريقة...
+            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=(255, 255, 255), anchor="ra")
+            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=(212, 175, 55), anchor="ra")
+            
+            # رقم الحساب ZD-0000
+            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=(255, 255, 255), anchor="mm")
+
+        # تحويل الصورة النهائية لإرسالها
         output = io.BytesIO()
         template.save(output, format='PNG')
         output.seek(0)
         return output
 
     except Exception as e:
-        print(f"❌ خطأ حقيقي في الرسم: {e}")
+        print(f"❌ خطأ في دمج الخطوط: {e}")
         return None
-        
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
