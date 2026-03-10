@@ -494,11 +494,13 @@ async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="ع
             logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
             
 
-# --- دالة الإصلاح القوية ---
+
 def fix_arabic(text):
     if not text: return ""
-    reshaped = arabic_reshaper.reshape(str(text))
-    return get_display(reshaped)
+    # 1. تشكيل الحروف لتصبح متصلة
+    reshaped_text = arabic_reshaper.reshape(str(text))
+    # 2. قلب الاتجاه ليكون RTL
+    return get_display(reshaped_text)
 
 async def generate_zidni_card(user_data, photo_url=None):
     # 1. تعريف المسارات بدقة
