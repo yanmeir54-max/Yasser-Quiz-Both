@@ -512,53 +512,47 @@ async def generate_zidni_card(user_data, photo_url=None):
         "card": "assets/images/zidni_card.png"
     }
 
-    # 2. التأكد من وجود الملفات قبل البدء (فحص أمني)
+    # 2. فحص وجود الملفات
     for key, path in paths.items():
         if not os.path.exists(path):
-            print(f"❌ خطأ: ملف {key} مفقود في المسار: {path}")
+            print(f"❌ خطأ: ملف {key} مفقود في: {path}")
             return None
 
     try:
-        # فتح القالب
+        # 3. فتح القالب وتحميل الخطوط
         template = Image.open(paths["card"]).convert("RGBA")
-        
-        # تحميل الخط الأساسي
         font_main = ImageFont.truetype(paths["arabic"], 35)
         font_info = ImageFont.truetype(paths["arabic"], 30)
 
-        # 3. الرسم باستخدام المحرك الذكي Pilmoji
+        # (ملاحظة: إذا كنت تضع كود رسم صورة البروفايل، ضعه هنا قبل بلوك Pilmoji)
+
+        # 4. الرسم باستخدام المحرك الذكي
         with Pilmoji(template) as pilmoji:
-            # رسم الاسم (يدعم الزخارف والإيموجي تلقائياً)
-            pilmoji.text(
-                (685, 368), 
-                fix_arabic(user_data['name']), 
-                font=font_main, 
-                fill=(255, 255, 255), 
-                anchor="ra"
-            )
+            white = (255, 255, 255)
+            gold = (212, 175, 55)
+
+            # الاسم
+            pilmoji.text((685, 368), fix_arabic(user_data['name']), font=font_main, fill=white, anchor="ra")
             
-            # رسم الدولة (اليمن 🇾🇪)
-            pilmoji.text(
-                (685, 458), 
-                fix_arabic("اليمن 🇾🇪"), 
-                font=font_info, 
-                fill=(212, 175, 55), 
-                anchor="ra"
-            )
+            # الدولة (اليمن 🇾🇪)
+            pilmoji.text((685, 458), fix_arabic("اليمن 🇾🇪"), font=font_info, fill=gold, anchor="ra")
+            
+            # الرتبة
+            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=white, anchor="ra")
+            
+            # الرصيد (المحفظة)
+            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=gold, anchor="ra")
+            
+            # رقم الحساب (توسيط كامل mm في منتصف المستطيل السفلي)
+            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=white, anchor="mm")
 
-            # الرتبة والرصيد ورقم الحساب
-            pilmoji.text((685, 548), fix_arabic(user_data['rank']), font=font_info, fill=(255, 255, 255), anchor="ra")
-            pilmoji.text((685, 638), fix_arabic(f"{user_data['wallet']} ن"), font=font_info, fill=(212, 175, 55), anchor="ra")
-            pilmoji.text((435, 845), fix_arabic(f"ZD-{user_data['acc_num']}"), font=font_info, fill=(255, 255, 255), anchor="mm")
-
-        # تحويل النتيجة لملف جاهز للإرسال
+        # 5. تحويل النتيجة لملف جاهز للإرسال
         output = io.BytesIO()
         template.save(output, format='PNG')
         output.seek(0)
         return output
 
     except Exception as e:
-        # هذا السطر سيطبع لك السبب الحقيقي للخطأ في شاشة البوت (Terminal)
         print(f"❌ العطل الحقيقي هو: {str(e)}")
         return None
 # ==========================================
