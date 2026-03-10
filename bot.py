@@ -996,17 +996,17 @@ ITEMS_DB = {
 
     # --- [ 🌹 هدايا وورود ] ---
     "gifts": {
-        "rose_red": {"name": "🌹 باقة ورد أحمر", "price": 1000},
+        "rosered": {"name": "🌹 باقة ورد أحمر", "price": 1000},
         "tulip": {"name": "🌷 زهرة التوليب", "price": 1200},
         "bouquet": {"name": "💐 الباقة الملكية", "price": 5000},
         "sunflower": {"name": "🌻 إشراقة أمل", "price": 1500},
         "jasmine": {"name": "⚪ ياسمين الشام", "price": 1100},
         "choc": {"name": "🍫 صندوق شوكولا", "price": 2000},
-        "gift_b": {"name": "🎁 صندوق المفاجآت", "price": 3000},
+        "giftb": {"name": "🎁 صندوق المفاجآت", "price": 3000},
         "ring": {"name": "💍 خاتم الألماس", "price": 20000},
         "perfume": {"name": "🧴 عطر فرنسي", "price": 8000},
         "watch": {"name": "⌚ ساعة رولكس", "price": 45000},
-        "gold_r": {"name": "💍 خاتم ذهب عيار 21", "price": 15000},
+        "goldr": {"name": "💍 خاتم ذهب عيار 21", "price": 15000},
         "teddy": {"name": "🧸 دبدوب كبير", "price": 4000},
         "cake": {"name": "🎂 كيكة الاحتفال", "price": 6000},
         "iphone": {"name": "📱 آيفون 15 بروماكس", "price": 50000},
@@ -1015,19 +1015,19 @@ ITEMS_DB = {
 
     # --- [ 🥂 رفاهية المليارديرات ] ---
     "rare": {
-        "gold_bar": {"name": "🧱 سبيكة ذهب", "price": 100000},
-        "luxury_car": {"name": "🏎️ فيراري", "price": 500000},
-        "private_jet": {"name": "🛩️ طائرة خاصة", "price": 2000000},
+        "goldbar": {"name": "🧱 سبيكة ذهب", "price": 100000},
+        "luxurycar": {"name": "🏎️ فيراري", "price": 500000},
+        "privatejet": {"name": "🛩️ طائرة خاصة", "price": 2000000},
         "yacht": {"name": "🛥️ يخت ملكي", "price": 5000000},
         "island": {"name": "🏝️ جزيرة خاصة", "price": 10000000},
-        "crown_diamond": {"name": "👑 التاج الماسي", "price": 50000000},
+        "crowndiamond": {"name": "👑 التاج الماسي", "price": 50000000},
         "satellite": {"name": "🛰️ قمر صناعي", "price": 100000000},
         "space_ship": {"name": "🚀 سفينة فضاء", "price": 500000000},
         "pyramid": {"name": "📐 هرم خاص", "price": 150000000},
-        "oil_well": {"name": "🛢️ بئر نفط", "price": 80000000},
+        "oilwell": {"name": "🛢️ بئر نفط", "price": 80000000},
         "football_club": {"name": "⚽ نادي رياضي", "price": 120000000},
-        "moon_land": {"name": "🌑 قطعة أرض على القمر", "price": 1000000000},
-        "mars_base": {"name": "🚀 قاعدة على المريخ", "price": 5000000000},
+        "moonland": {"name": "🌑 قطعة أرض على القمر", "price": 1000000000},
+        "marsbase": {"name": "🚀 قاعدة على المريخ", "price": 5000000000},
         "flat": {"name": "🏢 شقة فاخرة", "price": 30000},
         "villa": {"name": "🏡 فيلا بمسبح", "price": 150000},
         "palace": {"name": "🏰 قصر منيف", "price": 1000000},
@@ -1044,12 +1044,12 @@ ITEMS_DB = {
     
     # --- [ 🃏 كروت اللعب ] ---
     "cards": {
-        "hint_letter": {"name": "🔍 كرت إظهار حرف", "price": 1500},
-        "hint_full": {"name": "💡 كرت التلميح", "price": 3000},
-        "add_time": {"name": "⏱️ كرت زيادة الوقت", "price": 2500},
-        "reveal_ans": {"name": "🎯 كرت كشف الإجابة", "price": 10000},
-        "double_coin": {"name": "💰 كرت مضاعفة المبلغ x2", "price": 7000},
-        "shield_up": {"name": "🛡️ كرت الحماية", "price": 5000}
+        "letter": {"name": "🔍 كرت إظهار حرف", "price": 1500},
+        "full": {"name": "💡 كرت التلميح", "price": 3000},
+        "time": {"name": "⏱️ كرت زيادة الوقت", "price": 2500},
+        "reveal": {"name": "🎯 كرت كشف الإجابة", "price": 10000},
+        "double": {"name": "💰 كرت مضاعفة المبلغ x2", "price": 7000},
+        "shield": {"name": "🛡️ كرت الحماية", "price": 5000}
     },
 }
 # --- [ 2. دالة تنسيق واجهة المتجر ] ---
@@ -1344,10 +1344,10 @@ async def handle_purchase_confirmation(call: types.CallbackQuery):
 
     confirm_text = (
         f"<b>🛒 تأكيد عملية الشراء</b>\n"
-        f"— — — — — — — — — —\n"
+        f"  — — — — — — — — — —\n"
         f"📦 السلعة: <b>{item_name}</b>\n"
         f"💰 الثمن: <code>{price}</code> ن\n"
-        f"— — — — — — — — — —\n"
+        f"  — — — — — — — — — —\n"
         f"⚠️ هل أنت متأكد من رغبتك في الشراء؟"
     )
 
