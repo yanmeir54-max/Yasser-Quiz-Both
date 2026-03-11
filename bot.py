@@ -627,6 +627,21 @@ def format_group_card(group_data: dict):
     card += "✨ <i>تعاونوا لتصبح مجموعتكم هي الأكثر ذكاءً!</i>"
     
     return card
+def update_system_setting(setting_name, new_value):
+    """
+    تحديث إعدادات النظام في جدول system_settings
+    """
+    try:
+        # نقوم بتحديث القيمة حيث اسم الإعداد هو ACTIVE_GROQ_KEY
+        res = supabase.table("system_settings").update({"key_value": new_value}).eq("key_name", setting_name).execute()
+        
+        # إذا تمت العملية بنجاح نرجع True
+        if res.data:
+            return True
+        return False
+    except Exception as e:
+        logging.error(f"Error updating system setting: {e}")
+        return False
 # ==========================================
 # 1. كيبوردات التحكم الرئيسية (Main Keyboards)
 # ==========================================
