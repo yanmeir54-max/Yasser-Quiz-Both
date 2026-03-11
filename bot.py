@@ -11,6 +11,8 @@ import requests
 import httpx  
 import aiohttp
 import arabic_reshaper
+from aiogram import types
+from aiogram.dispatcher.filters import Text # بديل لـ F في الإصدار الثاني
 from pilmoji import Pilmoji 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from bidi.algorithm import get_display
@@ -20,7 +22,6 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client 
-from aiogram import F, types
 
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
