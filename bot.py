@@ -4213,48 +4213,68 @@ async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext = None):
     except:
         await c.answer("⚠️ حدث خطأ أثناء التحديث")
 
+
 # --- [ 3. معالج بدء عملية التحديث ] ---
 @dp.callback_query_handler(text="admin_update_any_key", user_id=ADMIN_ID)
 async def start_key_update(c: types.CallbackQuery):
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("تحديث المفتاح 1", callback_data="target_G_KEY_1"),
-        InlineKeyboardButton("تحديث المفتاح 2", callback_data="target_G_KEY_2"),
-        InlineKeyboardButton("تحديث المفتاح 3", callback_data="target_G_KEY_3")
+        InlineKeyboardButton("🔑 تحديث المفتاح 1 (G_KEY_1)", callback_data="target_G_KEY_1"),
+        InlineKeyboardButton("🔑 تحديث المفتاح 2 (G_KEY_2)", callback_data="target_G_KEY_2"),
+        InlineKeyboardButton("🔑 تحديث المفتاح 3 (G_KEY_3)", callback_data="target_G_KEY_3"),
+        InlineKeyboardButton("🔙 إلغاء", callback_data="admin_main_menu")
     )
     await c.message.edit_text("🎯 <b>اختر الرقم الذي تريد حفظ المفتاح الجديد فيه:</b>", reply_markup=kb, parse_mode="HTML")
 
 # --- [ 4. استقبال رقم المفتاح المختار ] ---
-@dp.callback_query_handler(lambda c: c.data.startswith("target_"), user_id=ADMIN_ID)
+@dp.callback_query_handler(lambda c: c.data.startswith("target_"), state="*", user_id=ADMIN_ID)
 async def set_target_key(c: types.CallbackQuery, state: FSMContext):
     target = c.data.replace("target_", "")
-    await state.update_data(selected_key=target)
-    await AdminStates.waiting_for_key_value.set()
-    await c.message.answer(f"📥 <b>أرسل الآن مفتاح GROQ الجديد ليتم حفظه في {target}:</b>", parse_mode="HTML")
+    # حفظ اسم الحقل المستهدف في الذاكرة المؤقتة (State Data)
+    await state.update_data(selected_key_name=target)
+    
+    # ننتقل لحالة انتظار النص
+    await AdminStates.waiting_for_new_token.set() 
+    
+    await c.message.answer(f"📥 <b>أرسل الآن مفتاح GROQ الجديد:</b>\nسيتم حفظه في الحقل: <code>{target}</code>", parse_mode="HTML")
     await c.answer()
 
-# --- [ 5. استقبال المفتاح وحفظه ] ---
-@dp.message_handler(state=AdminStates.waiting_for_key_value, user_id=ADMIN_ID)
+# --- [ 5. استقبال المفتاح وحفظه في سوبابيس ] ---
+@dp.message_handler(state=AdminStates.waiting_for_new_token, user_id=ADMIN_ID)
 async def save_key_to_db(message: types.Message, state: FSMContext):
     new_token = message.text.strip()
+    
+    # جلب اسم المفتاح الذي اخترناه في الخطوة السابقة
     user_data = await state.get_data()
-    target_key = user_data.get("selected_key")
+    target_key_name = user_data.get("selected_key_name")
+
+    if not new_token.startswith("gsk_"): # تأكد بسيط من صيغة مفاتيح Groq
+        await message.answer("⚠️ يبدو أن هذا ليس مفتاح Groq صالح (يجب أن يبدأ بـ gsk). حاول مرة أخرى.")
+        return
 
     try:
-        # تحديث القيمة في سوبابيس
-        res = supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", target_key).execute()
+        # 1. تحديث القيمة المحددة (G_KEY_1 أو 2 أو 3)
+        res = supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", target_key_name).execute()
         
-        if res.data:
-            # تفعيل هذا المفتاح تلقائياً كـ مفتاح نشط
-            supabase.table("system_settings").update({"key_value": target_key}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
-            await message.answer(f"✅ <b>تم بنجاح!</b>\nتم حفظ المفتاح في <code>{target_key}</code> وتفعيله كـ محرك نشط حالياً.")
+        # 2. تحديث المفتاح النشط ليكون هو هذا المفتاح الجديد مباشرة
+        # ملاحظة: هنا نحفظ "القيمة" الفعلية في المفتاح النشط ليعمل البوت فوراً
+        active_res = supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
+
+        if res.data and active_res.data:
+            await message.answer(
+                f"✅ <b>تم التحديث بنجاح!</b>\n\n"
+                f"📍 الموقع: <code>{target_key_name}</code>\n"
+                f"🚀 الحالة: <b>مفعّل الآن كمحرك أساسي.</b>", 
+                parse_mode="HTML"
+            )
         else:
-            await message.answer("❌ فشل الحفظ، تأكد من تشغيل كود SQL في سوبابيس أولاً.")
+            await message.answer("❌ فشل التحديث. تأكد من وجود سجلات باسم G_KEY_1 و ACTIVE_GROQ_KEY في الجدول.")
+            
     except Exception as e:
-        await message.answer(f"⚠️ خطأ فني: {e}")
+        await message.answer(f"⚠️ خطأ أثناء الاتصال بـ Supabase:\n<code>{e}</code>", parse_mode="HTML")
 
+    # إنهاء الحالة (Finish State)
     await state.finish()
-
 # =========================================
 # --- 3. معالج زر التحديث (Restart) ---
 @dp.callback_query_handler(text="admin_restart_now", user_id=ADMIN_ID)
