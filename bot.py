@@ -4180,9 +4180,10 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_photo = State()
     waiting_for_key_value = State() # الحالة التي ننتظر فيها النص الجديد للمفتاح
 
-# ============================================================
-# --- [ 1. كيبوردات الإدارة - Keyboards ] ---
-# ============================================================
+# =========================================
+#          👑 غرفة عمليات المطور 👑
+# =========================================
+
 def get_main_admin_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -4190,12 +4191,14 @@ def get_main_admin_kb():
         InlineKeyboardButton("📝 مراجعة الطلبات", callback_data="admin_view_pending"),
         InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
         InlineKeyboardButton("🔄 تحديث النظام", callback_data="admin_restart_now"),
-        InlineKeyboardButton("🔑 مفاتيح GROQ", callback_data="admin_keys_hub")
+        # التحديث الجديد: زر إدارة مفاتيح GROQ
+        InlineKeyboardButton("🔑 مفاتيح GROQ", callback_data="admin_keys_hub") 
     )
     kb.row(InlineKeyboardButton("🔐 استبدال توكين البوت", callback_data="admin_change_token"))
     kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
     return kb
 
+# كيبورد إدارة مفاتيح GROQ (الدور الثاني)
 def get_keys_management_kb():
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
@@ -4207,124 +4210,103 @@ def get_keys_management_kb():
     )
     return kb
 
-# ============================================================
-# --- [ 2. معالجات الاستدعاء (الدرجة الأولى - العربية) ] ---
-# ============================================================
-
-# معالج الكلمات العربية (لوحتي، المطور، إلخ)
-@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات', 'الإدارة'], user_id=ADMIN_ID)
-async def admin_text_trigger(message: types.Message):
-    await admin_dashboard(message)
-
-# المعالج الأساسي (يمكن استدعاؤه بـ /admin أيضاً)
+# --- 1. معالج الأمر الرئيسي /admin (المعدل للنظام الموحد) ---
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
+@dp.message_handler(lambda m: m.text in ['لوحتي', 'المطور', 'غرفة العمليات'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
     try:
-        # جلب البيانات من سوبابيس لغرفة العمليات
         res = supabase.table("groups_hub").select("*").execute()
         active = len([g for g in res.data if g['status'] == 'active'])
         blocked = len([g for g in res.data if g['status'] == 'blocked'])
-        total_points = sum([g.get('total_group_score', 0) for g in res.data])
+        total_global_points = sum([g.get('total_group_score', 0) for g in res.data])
 
         txt = (
             "👑 <b>غرفة العمليات الرئيسية</b>\n"
             "━━━━━━━━━━━━━━\n"
-            f"✅ المجموعات النشطة : <b>{active}</b>\n"
-            f"🚫 المجموعات المحظورة : <b>{blocked}</b>\n"
-            f"🏆 إجمالي نقاط الهب : <b>{total_points:,}</b>\n"
+            f"✅ المجموعات النشطة: <b>{active}</b>\n"
+            f"🚫 المجموعات المحظورة: <b>{blocked}</b>\n"
+            f"🏆 إجمالي نقاط الهب: <b>{total_global_points:,}</b>\n"
             "━━━━━━━━━━━━━━\n"
-            "👇 <b>اختر قسماً لإدارته :</b>"
+            "👇 اختر قسماً لإدارته:"
         )
         await message.answer(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
     except Exception as e:
-        logging.error(f"Error in Admin Dashboard: {e}")
-        await message.answer(f"❌ <b>خطأ في الاتصال بسوبابيس:</b>\n<code>{e}</code>", parse_mode="HTML")
+        logging.error(f"Admin Panel Error: {e}")
+        await message.answer("❌ خطأ في الاتصال بقاعدة البيانات الموحدة.")
 
-# ============================================================
-# --- [ 3. معالج الرجوع - Navigation ] ---
-# ============================================================
-
-@dp.callback_query_handler(text="admin_back", user_id=ADMIN_ID)
-async def back_to_main_admin(c: types.CallbackQuery):
-    """العودة من أي قسم فرعي إلى غرفة العمليات الرئيسية"""
+# --- 2. معالج العودة للقائمة الرئيسية (المعدل) ---
+@dp.callback_query_handler(lambda c: c.data == "admin_back", user_id=ADMIN_ID, state="*")
+async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     try:
         res = supabase.table("groups_hub").select("*").execute()
         active = len([g for g in res.data if g['status'] == 'active'])
         blocked = len([g for g in res.data if g['status'] == 'blocked'])
+        total_global_points = sum([g.get('total_group_score', 0) for g in res.data])
         
         txt = (
             "👑 <b>غرفة العمليات الرئيسية</b>\n"
             "━━━━━━━━━━━━━━\n"
-            f"✅ المجموعات النشطة : <b>{active}</b>\n"
-            f"🚫 المجموعات المحظورة : <b>{blocked}</b>\n"
+            f"✅ المجموعات النشطة: <b>{active}</b>\n"
+            f"🚫 المجموعات المحظورة: <b>{blocked}</b>\n"
+            f"🏆 إجمالي نقاط الهب: <b>{total_global_points:,}</b>\n"
             "━━━━━━━━━━━━━━"
         )
         await c.message.edit_text(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
-    except:
-        await c.message.edit_text("👑 <b>غرفة العمليات الرئيسية</b>", reply_markup=get_main_admin_kb(), parse_mode="HTML")
-    await c.answer()
-    
-# --- [ 3. معالج بدء عملية التحديث ] ---
+    except Exception as e:
+        await c.answer("⚠️ حدث خطأ أثناء تحديث البيانات الموحدة")
+
+# --- 3. قسم إدارة مفاتيح GROQ (التحديث الجديد) ---
+
+@dp.callback_query_handler(text="admin_keys_hub", user_id=ADMIN_ID)
+async def show_keys_hub(c: types.CallbackQuery):
+    txt = (
+        "🔑 <b>إدارة مفاتيح GROQ الاحتياطية</b>\n"
+        "━━━━━━━━━━━━━━\n"
+        "اختر المفتاح المراد تفعيله للعمل حالياً، أو قم بتحديث مفتاح موجود:"
+    )
+    await c.message.edit_text(txt, reply_markup=get_keys_management_kb(), parse_mode="HTML")
+
 @dp.callback_query_handler(text="admin_update_any_key", user_id=ADMIN_ID)
 async def start_key_update(c: types.CallbackQuery):
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("🔑 تحديث المفتاح 1 (G_KEY_1)", callback_data="target_G_KEY_1"),
-        InlineKeyboardButton("🔑 تحديث المفتاح 2 (G_KEY_2)", callback_data="target_G_KEY_2"),
-        InlineKeyboardButton("🔑 تحديث المفتاح 3 (G_KEY_3)", callback_data="target_G_KEY_3"),
-        InlineKeyboardButton("🔙 إلغاء", callback_data="admin_main_menu")
+        InlineKeyboardButton("🔑 تحديث G_KEY_1", callback_data="target_G_KEY_1"),
+        InlineKeyboardButton("🔑 تحديث G_KEY_2", callback_data="target_G_KEY_2"),
+        InlineKeyboardButton("🔑 تحديث G_KEY_3", callback_data="target_G_KEY_3"),
+        InlineKeyboardButton("🔙 إلغاء", callback_data="admin_keys_hub")
     )
     await c.message.edit_text("🎯 <b>اختر الرقم الذي تريد حفظ المفتاح الجديد فيه:</b>", reply_markup=kb, parse_mode="HTML")
 
-# --- [ 4. استقبال رقم المفتاح المختار ] ---
-@dp.callback_query_handler(lambda c: c.data.startswith("target_"), state="*", user_id=ADMIN_ID)
+@dp.callback_query_handler(lambda c: c.data.startswith("target_"), user_id=ADMIN_ID)
 async def set_target_key(c: types.CallbackQuery, state: FSMContext):
     target = c.data.replace("target_", "")
-    # حفظ اسم الحقل المستهدف في الذاكرة المؤقتة (State Data)
     await state.update_data(selected_key_name=target)
-    
-    # ننتقل لحالة انتظار النص
     await AdminStates.waiting_for_new_token.set() 
-    
-    await c.message.answer(f"📥 <b>أرسل الآن مفتاح GROQ الجديد:</b>\nسيتم حفظه في الحقل: <code>{target}</code>", parse_mode="HTML")
+    await c.message.answer(f"📥 <b>أرسل الآن مفتاح GROQ الجديد:</b>\nسيتم حفظه في: <code>{target}</code>", parse_mode="HTML")
     await c.answer()
 
-# --- [ 5. استقبال المفتاح وحفظه في سوبابيس ] ---
 @dp.message_handler(state=AdminStates.waiting_for_new_token, user_id=ADMIN_ID)
 async def save_key_to_db(message: types.Message, state: FSMContext):
     new_token = message.text.strip()
-    
-    # جلب اسم المفتاح الذي اخترناه في الخطوة السابقة
     user_data = await state.get_data()
     target_key_name = user_data.get("selected_key_name")
 
-    if not new_token.startswith("gsk_"): # تأكد بسيط من صيغة مفاتيح Groq
-        await message.answer("⚠️ يبدو أن هذا ليس مفتاح Groq صالح (يجب أن يبدأ بـ gsk). حاول مرة أخرى.")
+    if not new_token.startswith("gsk_"):
+        await message.answer("⚠️ يبدو أن هذا ليس مفتاح Groq صالح. حاول مرة أخرى.")
         return
 
     try:
-        # 1. تحديث القيمة المحددة (G_KEY_1 أو 2 أو 3)
-        res = supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", target_key_name).execute()
-        
-        # 2. تحديث المفتاح النشط ليكون هو هذا المفتاح الجديد مباشرة
-        # ملاحظة: هنا نحفظ "القيمة" الفعلية في المفتاح النشط ليعمل البوت فوراً
-        active_res = supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
+        # تحديث السجل المختار والمفتاح النشط فوراً
+        supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", target_key_name).execute()
+        supabase.table("system_settings").update({"key_value": new_token}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
 
-        if res.data and active_res.data:
-            await message.answer(
-                f"✅ <b>تم التحديث بنجاح!</b>\n\n"
-                f"📍 الموقع: <code>{target_key_name}</code>\n"
-                f"🚀 الحالة: <b>مفعّل الآن كمحرك أساسي.</b>", 
-                parse_mode="HTML"
-            )
-        else:
-            await message.answer("❌ فشل التحديث. تأكد من وجود سجلات باسم G_KEY_1 و ACTIVE_GROQ_KEY في الجدول.")
-            
+        await message.answer(f"✅ <b>تم التحديث والتفعيل بنجاح!</b>\n📍 الموقع: <code>{target_key_name}</code>", parse_mode="HTML")
+        await state.finish()
+        await admin_dashboard(message) 
     except Exception as e:
-        await message.answer(f"⚠️ خطأ أثناء الاتصال بـ Supabase:\n<code>{e}</code>", parse_mode="HTML")
-
-    # إنهاء الحالة (Finish State)
-    await state.finish()
+        await message.answer(f"❌ خطأ في السوبابيس: {e}")
+        await state.finish()
 # =========================================
 # --- 3. معالج زر التحديث (Restart) ---
 @dp.callback_query_handler(text="admin_restart_now", user_id=ADMIN_ID)
