@@ -4307,6 +4307,49 @@ async def save_key_to_db(message: types.Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ خطأ في السوبابيس: {e}")
         await state.finish()
+# ============================================================
+# --- [ معالج تفعيل (تبديل) المفتاح النشط ] ---
+# ============================================================
+
+@dp.callback_query_handler(lambda c: c.data.startswith("gkey_"), user_id=ADMIN_ID)
+async def activate_key_by_slot(c: types.CallbackQuery):
+    """
+    هذا المعالج يقرأ القيمة المخزنة في G_KEY_1 أو 2 أو 3 
+    ويقوم بنسخها إلى ACTIVE_GROQ_KEY ليعمل بها البوت فوراً.
+    """
+    selected_slot = c.data.replace("gkey_", "") # استخراج اسم السلوت
+    
+    try:
+        # 1. جلب القيمة من السجل المختار
+        res = supabase.table("system_settings").select("key_value").eq("key_name", selected_slot).execute()
+        
+        if res.data and res.data[0]['key_value']:
+            target_token = res.data[0]['key_value']
+            
+            # 2. تحديث سجل ACTIVE_GROQ_KEY ليكون هو المحرك الحالي
+            supabase.table("system_settings").update({
+                "key_value": target_token,
+                "description": f"Currently active key from {selected_slot}"
+            }).eq("key_name", "ACTIVE_GROQ_KEY").execute()
+            
+            # 3. إشعار المطور بنجاح التبديل
+            await c.answer(f"🚀 تم تفعيل {selected_slot} بنجاح!", show_alert=True)
+            
+            # تحديث نص الرسالة لإظهار المفتاح الحالي
+            new_txt = (
+                f"✅ <b>تم تغيير المحرك بنجاح!</b>\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"المفتاح النشط الآن: <code>{selected_slot}</code>\n"
+                f"تم سحب البيانات من جدول <code>system_settings</code>."
+            )
+            await c.message.edit_text(new_txt, reply_markup=get_keys_management_kb(), parse_mode="HTML")
+        
+        else:
+            await c.answer(f"❌ خطأ: سجل {selected_slot} فارغ، قم بتحديثه أولاً.", show_alert=True)
+
+    except Exception as e:
+        logging.error(f"Activation Error: {e}")
+        await c.answer("⚠️ فشل الاتصال بقاعدة البيانات لتفعيل المفتاح.", show_alert=True)
 # =========================================
 # --- 3. معالج زر التحديث (Restart) ---
 @dp.callback_query_handler(text="admin_restart_now", user_id=ADMIN_ID)
