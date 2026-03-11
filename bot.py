@@ -1555,6 +1555,44 @@ class Form(StatesGroup):
 class BankTransfer(StatesGroup):
     waiting_for_account = State()  # حالة انتظار رقم الحساب البنكي
     waiting_for_amount = State()   # حالة انتظار إرسال المبلغ
+# ============================================================
+# هاندلر استدعاء لوحة المطور (لوحتي، المطور، غرفة العمليات)
+# ============================================================
+@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات', 'الإدارة'], user_id=ADMIN_ID)
+async def cmd_open_admin_dashboard(message: types.Message):
+    """
+    استدعاء لوحة المطور مع عرض إحصائيات سوبابيس (بدون حذف تلقائي)
+    """
+    try:
+        # 1. جلب البيانات الحية من سوبابيس (إحصائيات المجموعات)
+        res = supabase.table("groups_hub").select("*").execute()
+        
+        active = len([g for g in res.data if g['status'] == 'active'])
+        blocked = len([g for g in res.data if g['status'] == 'blocked'])
+        total_points = sum([g.get('total_group_score', 0) for g in res.data])
+
+        # 2. تصميم النص الفخم لغرفة العمليات
+        txt = (
+            "👑 <b>غرفة العمليات الرئيسية</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            f"✅ المجموعات النشطة : <b>{active}</b>\n"
+            f"🚫 المجموعات المحظورة : <b>{blocked}</b>\n"
+            f"🏆 إجمالي نقاط الهب : <b>{total_points:,}</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            "👇 <b>اختر قسماً لإدارته من الأزرار :</b>"
+        )
+        
+        # 3. إرسال اللوحة
+        await message.reply(
+            txt,
+            reply_markup=get_main_admin_kb(),
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logging.error(f"Admin Panel Error: {e}")
+        await message.reply("❌ <b>فشل في فتح غرفة العمليات، تأكد من اتصال سوبابيس.</b>", parse_mode="HTML")
+
 # ==========================================
 @dp.message_handler(lambda message: message.text and (message.text.startswith('حسابي') or message.text.startswith('حسابه')))
 async def get_user_bank_card(message: types.Message):
@@ -1603,6 +1641,7 @@ async def get_user_bank_card(message: types.Message):
         print(f"❌ Error: {e}")
         await status_msg.edit_text("⚠️ عذراً، حدث خطأ فني غير متوقع.")
             
+
 # ==========================================
 # 2️⃣ المعالج الرئيسي للأوامر (عني، رتبتي، إلخ)
 # ==========================================
