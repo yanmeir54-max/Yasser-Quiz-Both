@@ -20,7 +20,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client 
-from PIL import Image, ImageFont
+from aiogram import F, types
 
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
