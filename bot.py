@@ -616,29 +616,24 @@ async def generate_zidni_card(user_id: int, bot, supabase):
         # جلب العلم من القاعدة (الافتراضي علم اليمن إذا لم يوجد)
         flag = user_db.get("country_flag", "")
 
-        # 5. الرسم على البطاقة (الإحداثيات ثابتة كما هي)
+        # 5. الرسم على البطاقة (بإحداثياتك المعتمدة)
         with Pilmoji(template) as pilmoji:
             white, gold = (255, 255, 255), (212, 175, 55)
+            # نمرر مسار خط الإيموجي لضمان ظهور علم اليمن والرموز
             emoji_path = paths["emoji"] if os.path.exists(paths["emoji"]) else None
 
-            # الاسم (تم إزالة العلم)
+            # الاسم
             pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_path)
-            
-            # الدولة (تم إزالة العلم من النص)
-            pilmoji.text((795, 280), fix_arabic("الجمهورية اليمنية"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
-            
-            # --- إحداثيات العلم منفصلة (برمجها هنا) ---
-            # قم بتغيير (795, 310) إلى الإحداثيات التي تناسب تصميمك
-            pilmoji.text((495, 280), flag, font=font_info, emoji_fontpath=emoji_path, anchor="ra")
-            
+            # الدولة
+            pilmoji.text((795, 280), fix_arabic("اليمن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # الرتبة
             pilmoji.text((795, 345), fix_arabic(rank), font=font_info, fill=white, anchor="ra", emoji_fontpath=emoji_path)
-            
             # الرصيد
-            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} 💸"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
-            
+            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # رقم الحساب
-            pilmoji.text((505, 500), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+            pilmoji.text((585, 550), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+
+    
 # ============================================================
 # دالة تنسيق بطاقة المجموعة (Top Groups)
 # ============================================================
