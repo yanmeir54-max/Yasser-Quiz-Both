@@ -4112,16 +4112,18 @@ async def unified_answer_checker(m: types.Message):
                         # فور استشعار أن active أصبحت False
                     return
 
-
+# ============================================================
+# --- [ إعداد حالات الإدارة - Admin States ] ---
+# ============================================================
 class AdminStates(StatesGroup):
-    waiting_for_new_token = State()      # تحديث التوكن أو مفتاح API
-    waiting_for_broadcast = State()      # إرسال رسالة نصية لجميع المستخدمين
-    waiting_for_broadcast_photo = State() # إرسال صورة مع نص لجميع المستخدمين
+    waiting_for_new_token = State()      
+    waiting_for_broadcast = State()      
+    waiting_for_broadcast_photo = State()
+    waiting_for_key_value = State() # الحالة التي ننتظر فيها النص الجديد للمفتاح
 
 # ============================================================
-# 1. كيبوردات الإدارة (الرئيسية والمفاتيح)
+# --- [ 1. كيبوردات الإدارة - Keyboards ] ---
 # ============================================================
-
 def get_main_admin_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -4135,8 +4137,6 @@ def get_main_admin_kb():
     kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
     return kb
 
-
-# --- [ 2. تحديث الكيبورد ليحتوي على زر التحديث ] ---
 def get_keys_management_kb():
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
@@ -4149,16 +4149,19 @@ def get_keys_management_kb():
     return kb
 
 # ============================================================
-# 2. معالجات الاستدعاء (لوحتي / المطور / /admin)
+# --- [ 2. معالجات الاستدعاء (الدرجة الأولى - العربية) ] ---
 # ============================================================
 
-@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات'] or message.text.startswith('/admin'), user_id=ADMIN_ID)
-async def admin_dashboard_trigger(message: types.Message):
+# معالج الكلمات العربية (لوحتي، المطور، إلخ)
+@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات', 'الإدارة'], user_id=ADMIN_ID)
+async def admin_text_trigger(message: types.Message):
     await admin_dashboard(message)
 
+# المعالج الأساسي (يمكن استدعاؤه بـ /admin أيضاً)
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 async def admin_dashboard(message: types.Message):
     try:
+        # جلب البيانات من سوبابيس لغرفة العمليات
         res = supabase.table("groups_hub").select("*").execute()
         active = len([g for g in res.data if g['status'] == 'active'])
         blocked = len([g for g in res.data if g['status'] == 'blocked'])
@@ -4175,16 +4178,16 @@ async def admin_dashboard(message: types.Message):
         )
         await message.answer(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
     except Exception as e:
-        await message.answer(f"❌ خطأ في الاتصال: {e}")
+        logging.error(f"Error in Admin Dashboard: {e}")
+        await message.answer(f"❌ <b>خطأ في الاتصال بسوبابيس:</b>\n<code>{e}</code>", parse_mode="HTML")
 
 # ============================================================
-# 3. معالجات الـ Callback (التبديل والرجوع)
+# --- [ 3. معالج الرجوع - Navigation ] ---
 # ============================================================
 
-# تم إضافة state="*" و user_id لحل مشكلة "الأزرار ليست لك"
-@dp.callback_query_handler(lambda c: c.data == "admin_back", user_id=ADMIN_ID, state="*")
-async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext = None):
-    if state: await state.finish()
+@dp.callback_query_handler(text="admin_back", user_id=ADMIN_ID)
+async def back_to_main_admin(c: types.CallbackQuery):
+    """العودة من أي قسم فرعي إلى غرفة العمليات الرئيسية"""
     try:
         res = supabase.table("groups_hub").select("*").execute()
         active = len([g for g in res.data if g['status'] == 'active'])
@@ -4199,9 +4202,9 @@ async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext = None):
         )
         await c.message.edit_text(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
     except:
-        await c.answer("⚠️ حدث خطأ أثناء التحديث")
-
-
+        await c.message.edit_text("👑 <b>غرفة العمليات الرئيسية</b>", reply_markup=get_main_admin_kb(), parse_mode="HTML")
+    await c.answer()
+    
 # --- [ 3. معالج بدء عملية التحديث ] ---
 @dp.callback_query_handler(text="admin_update_any_key", user_id=ADMIN_ID)
 async def start_key_update(c: types.CallbackQuery):
