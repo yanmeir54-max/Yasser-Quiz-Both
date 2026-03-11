@@ -632,8 +632,17 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # رقم الحساب
             pilmoji.text((585, 550), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+        # 6. إخراج الصورة والبيانات (للكابشن)
+        output = io.BytesIO()
+        template.save(output, format="PNG")
+        output.seek(0)
+        
+        return output, user_db
 
-    
+    except Exception as e:
+        logging.error(f"❌ خطأ في generate_zidni_card: {e}")
+        return None, None
+        
 # ============================================================
 # دالة تنسيق بطاقة المجموعة (Top Groups)
 # ============================================================
