@@ -1555,43 +1555,6 @@ class Form(StatesGroup):
 class BankTransfer(StatesGroup):
     waiting_for_account = State()  # حالة انتظار رقم الحساب البنكي
     waiting_for_amount = State()   # حالة انتظار إرسال المبلغ
-# ============================================================
-# هاندلر استدعاء لوحة المطور (لوحتي، المطور، غرفة العمليات)
-# ============================================================
-@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات', 'الإدارة'], user_id=ADMIN_ID)
-async def cmd_open_admin_dashboard(message: types.Message):
-    """
-    استدعاء لوحة المطور مع عرض إحصائيات سوبابيس (بدون حذف تلقائي)
-    """
-    try:
-        # 1. جلب البيانات الحية من سوبابيس (إحصائيات المجموعات)
-        res = supabase.table("groups_hub").select("*").execute()
-        
-        active = len([g for g in res.data if g['status'] == 'active'])
-        blocked = len([g for g in res.data if g['status'] == 'blocked'])
-        total_points = sum([g.get('total_group_score', 0) for g in res.data])
-
-        # 2. تصميم النص الفخم لغرفة العمليات
-        txt = (
-            "👑 <b>غرفة العمليات الرئيسية</b>\n"
-            "━━━━━━━━━━━━━━\n"
-            f"✅ المجموعات النشطة : <b>{active}</b>\n"
-            f"🚫 المجموعات المحظورة : <b>{blocked}</b>\n"
-            f"🏆 إجمالي نقاط الهب : <b>{total_points:,}</b>\n"
-            "━━━━━━━━━━━━━━\n"
-            "👇 <b>اختر قسماً لإدارته من الأزرار :</b>"
-        )
-        
-        # 3. إرسال اللوحة
-        await message.reply(
-            txt,
-            reply_markup=get_main_admin_kb(),
-            parse_mode="HTML"
-        )
-
-    except Exception as e:
-        logging.error(f"Admin Panel Error: {e}")
-        await message.reply("❌ <b>فشل في فتح غرفة العمليات، تأكد من اتصال سوبابيس.</b>", parse_mode="HTML")
 
 # ==========================================
 @dp.message_handler(lambda message: message.text and (message.text.startswith('حسابي') or message.text.startswith('حسابه')))
@@ -1878,7 +1841,6 @@ async def transfer_by_reply(message: types.Message, state: FSMContext):
     )
 
 # ------------------------------------------------------------
-
 # 2. حالة التحويل عبر الأمر (طلب رقم الحساب)
 @dp.message_handler(lambda message: message.text == "تحويل" and not message.reply_to_message)
 async def transfer_by_acc(message: types.Message):
@@ -2130,8 +2092,56 @@ async def execute_actual_purchase(call: types.CallbackQuery):
     new_text = f"✨ <b>تمت العملية بنجاح!</b>\nمحفظتك الآن: <code>{wallet-price}</code> ن"
     await call.message.edit_text(new_text, reply_markup=get_shop_main_keyboard(user_id), parse_mode="HTML")
     
+# ============================================================
+# هاندلر استدعاء لوحة المطور (لوحتي، المطور، غرفة العمليات)
+# ============================================================
+@dp.message_handler(lambda message: message.text in ['لوحتي', 'المطور', 'غرفتي', 'غرفة العمليات', 'الإدارة'], chat_type=types.ChatType.PRIVATE)
+async def admin_dashboard_trigger(message: types.Message):
+    """
+    استدعاء لوحة التحكم الخاصة بالمطور مع التحقق من الهوية (مثل نظام التفعيل)
+    """
+    user_id = message.from_user.id
+
+    # التحقق الصارم: هل المستخدم هو المطور؟
+    if user_id != ADMIN_ID:
+        return await message.reply("⚠️ <b>عذراً، هذه اللوحة مخصصة لمطور النظام فقط.</b>", parse_mode="HTML")
+
+    try:
+        # 1. جلب البيانات الحية من سوبابيس (إحصائيات المجموعات)
+        res = supabase.table("groups_hub").select("*").execute()
+        
+        # تصنيف البيانات لجعل اللوحة "حية"
+        active = len([g for g in res.data if g['status'] == 'active'])
+        blocked = len([g for g in res.data if g['status'] == 'blocked'])
+        pending = len([g for g in res.data if g['status'] == 'pending'])
+        total_points = sum([g.get('total_group_score', 0) for g in res.data])
+
+        # 2. تصميم النص الفخم لغرفة العمليات (نفس أسلوب لوحة التحكم)
+        txt = (
+            "👑 <b>غرفة العمليات الرئيسية</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            f"✅ المجموعات النشطة : <b>{active}</b>\n"
+            f"🚫 المجموعات المحظورة : <b>{blocked}</b>\n"
+            f"⏳ طلبات معلقة : <b>{pending}</b>\n"
+            f"🏆 إجمالي نقاط الهب : <b>{total_points:,}</b>\n"
+            "━━━━━━━━━━━━━━\n"
+            "👇 <b>أهلاً بك يا مطور، اختر قسماً لإدارته :</b>"
+        )
+        
+        # 3. إرسال اللوحة مع الكيبورد الرئيسي الخاص بك
+        await message.answer(
+            txt, 
+            reply_markup=get_main_admin_kb(), 
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logging.error(f"Admin Dashboard Error: {e}")
+        await message.answer("❌ <b>حدث خطأ أثناء الاتصال بقاعدة البيانات الموحدة.</b>", parse_mode="HTML")
+
+# =========================================
 # 6. أمر التفعيل (Request Activation)
-# ==========================================
+# =========================================
 @dp.message_handler(lambda m: m.text == "تفعيل", chat_type=[types.ChatType.GROUP, types.ChatType.SUPERGROUP])
 async def activate_group_hub(message: types.Message):
     user_id = message.from_user.id
