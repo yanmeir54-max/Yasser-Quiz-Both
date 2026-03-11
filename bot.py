@@ -2253,7 +2253,7 @@ async def handle_control_buttons(c: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         # 6️⃣ [ محرك فتح لوحة الصدارة العالمية ] 🏆
-    elif action == "leaderboard" and "dev" in data_parts:
+    elif action == "dev" and "leaderboard" in data_parts:
         await c.answer("🏆 جاري فتح سجلات الشرف...")
         
         try:
@@ -4096,12 +4096,12 @@ def get_main_admin_kb():
     return kb
 
 def get_keys_management_kb():
-    """كيبورد إدارة المفاتيح الثلاثة"""
+    """تعديل callback_data لتبدأ بـ gkey_ بدلاً من set_"""
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
-        InlineKeyboardButton("💎 تفعيل المفتاح 1 (G_KEY_1)", callback_data="set_key_G_KEY_1"),
-        InlineKeyboardButton("💎 تفعيل المفتاح 2 (G_KEY_2)", callback_data="set_key_G_KEY_2"),
-        InlineKeyboardButton("💎 تفعيل المفتاح 3 (G_KEY_3)", callback_data="set_key_G_KEY_3"),
+        InlineKeyboardButton("💎 تفعيل المفتاح 1 (G_KEY_1)", callback_data="gkey_G_KEY_1"),
+        InlineKeyboardButton("💎 تفعيل المفتاح 2 (G_KEY_2)", callback_data="gkey_G_KEY_2"),
+        InlineKeyboardButton("💎 تفعيل المفتاح 3 (G_KEY_3)", callback_data="gkey_G_KEY_3"),
         InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")
     )
     return kb
@@ -4169,19 +4169,21 @@ async def show_keys_hub(c: types.CallbackQuery):
     )
     await c.message.edit_text(txt, reply_markup=get_keys_management_kb(), parse_mode="HTML")
 
-@dp.callback_query_handler(lambda c: c.data.startswith("set_key_"), user_id=ADMIN_ID, state="*")
+# الآن الهاندلر يستمع لـ gkey_ فقط، ولن يختلط بالهاندلر القديم
+@dp.callback_query_handler(lambda c: c.data.startswith("gkey_"), user_id=ADMIN_ID, state="*")
 async def switch_groq_key(c: types.CallbackQuery, state: FSMContext):
-    key_alias = c.data.replace("set_key_", "") 
+    # نستبدل gkey_ لنحصل على اسم المفتاح
+    key_alias = c.data.replace("gkey_", "") 
+    
     try:
-        # تحديث المفتاح النشط في سوبابيس
         success = update_system_setting("ACTIVE_GROQ_KEY", key_alias)
         if success:
             await c.answer(f"✅ تم تفعيل {key_alias} بنجاح!", show_alert=True)
-            await admin_back_to_main(c, state) # العودة للرئيسية
+            await admin_back_to_main(c, state)
         else:
-            await c.answer("❌ فشل التحديث في سوبابيس")
+            await c.answer("❌ فشل التحديث في سوبابيس", show_alert=True)
     except Exception as e:
-        await c.answer(f"⚠️ خطأ: {e}")
+        await c.answer(f"⚠️ خطأ : {e}", show_alert=True)
 
 # =========================================
 # --- 3. معالج زر التحديث (Restart) ---
