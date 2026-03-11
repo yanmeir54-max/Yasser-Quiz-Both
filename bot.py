@@ -4124,11 +4124,12 @@ async def unified_answer_checker(m: types.Message):
                         # فور استشعار أن active أصبحت False
                     return
 
-# ==========================================
-# --- [ إعداد حالات الإدارة ] ---
+from aiogram.fsm.state import State, StatesGroup
+
 class AdminStates(StatesGroup):
-    waiting_for_new_token = State()
-    waiting_for_broadcast = State()
+    waiting_for_new_token = State()      # تحديث التوكن أو مفتاح API
+    waiting_for_broadcast = State()      # إرسال رسالة نصية لجميع المستخدمين
+    waiting_for_broadcast_photo = State() # إرسال صورة مع نص لجميع المستخدمين
 
 # ============================================================
 # 1. كيبوردات الإدارة (الرئيسية والمفاتيح)
