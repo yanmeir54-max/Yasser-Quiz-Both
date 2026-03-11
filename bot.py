@@ -621,31 +621,24 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             white, gold = (255, 255, 255), (212, 175, 55)
             emoji_path = paths["emoji"] if os.path.exists(paths["emoji"]) else None
 
-            # الاسم (بجانبه العلم لإعطاء فخامة)
-            pilmoji.text((795, 210), fix_arabic(f"{name} {flag}"), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_path)
+            # الاسم (تم إزالة العلم)
+            pilmoji.text((795, 210), fix_arabic(name), font=font_main, fill=white, anchor="ra", emoji_fontpath=emoji_path)
             
-            # الدولة (تم دمج العلم مع النص لضمان الظهور)
-            pilmoji.text((795, 280), fix_arabic(f"الجمهورية اليمنية {flag}"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
+            # الدولة (تم إزالة العلم من النص)
+            pilmoji.text((795, 280), fix_arabic("الجمهورية اليمنية"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             
-            # الرتبة (تم حذف الـ Specialty)
+            # --- إحداثيات العلم منفصلة (برمجها هنا) ---
+            # قم بتغيير (795, 310) إلى الإحداثيات التي تناسب تصميمك
+            pilmoji.text((495, 280), flag, font=font_info, emoji_fontpath=emoji_path, anchor="ra")
+            
+            # الرتبة
             pilmoji.text((795, 345), fix_arabic(rank), font=font_info, fill=white, anchor="ra", emoji_fontpath=emoji_path)
             
             # الرصيد
-            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
+            pilmoji.text((795, 415), fix_arabic(f"{wallet:,} 💸"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             
             # رقم الحساب
-            pilmoji.text((585, 650), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
-
-        # 6. إخراج الصورة والبيانات
-        output = io.BytesIO()
-        template.save(output, format="PNG")
-        output.seek(0)
-        
-        return output, user_db
-
-    except Exception as e:
-        logging.error(f"❌ خطأ في generate_zidni_card: {e}")
-        return None, None
+            pilmoji.text((505, 550), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
 # ============================================================
 # دالة تنسيق بطاقة المجموعة (Top Groups)
 # ============================================================
@@ -1204,7 +1197,7 @@ async def format_profile_card(user_data: dict, user_id: int):
     flag = p.get('country_flag', '🌐')
     card += f"🌍 <b>:</b> الدولة ⇠ <b>{country} {flag}</b>\n"
     
-    card += f"💳 <b>:</b> الحساب ⇠ <code>#{p.get('bank_account', '----')}</code>\n"
+    card += f"💳 <b>:</b> الحساب ⇠ <code>{p.get('bank_account', '----')}</code>\n"
     card += f"🎓 <b>:</b> الرتبة ⇠ <b>{current_rank}</b>\n"
     card += f"🎖 <b>:</b> التخصص ⇠ <b>{p.get('specialty_title', 'هاوي')}</b>\n"
     
