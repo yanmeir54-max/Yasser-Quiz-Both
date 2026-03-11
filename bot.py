@@ -614,7 +614,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
         wallet = user_db.get("wallet", 0)
         acc_num = user_db.get("bank_account", "0000")
         # جلب العلم من القاعدة (الافتراضي علم اليمن إذا لم يوجد)
-        flag = user_db.get("country_flag", "🇾🇪")
+        flag = user_db.get("country_flag", "")
 
         # 5. الرسم على البطاقة (الإحداثيات ثابتة كما هي)
         with Pilmoji(template) as pilmoji:
@@ -638,7 +638,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             pilmoji.text((795, 415), fix_arabic(f"{wallet:,} 💸"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             
             # رقم الحساب
-            pilmoji.text((505, 550), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+            pilmoji.text((505, 500), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
 # ============================================================
 # دالة تنسيق بطاقة المجموعة (Top Groups)
 # ============================================================
