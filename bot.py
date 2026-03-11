@@ -4124,7 +4124,6 @@ async def unified_answer_checker(m: types.Message):
                         # فور استشعار أن active أصبحت False
                     return
 
-from aiogram.fsm.state import State, StatesGroup
 
 class AdminStates(StatesGroup):
     waiting_for_new_token = State()      # تحديث التوكن أو مفتاح API
