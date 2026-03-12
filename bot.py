@@ -4310,22 +4310,20 @@ async def unified_answer_checker(m: types.Message):
                         # فور استشعار أن active أصبحت False
                     return
 # ============================================================
-# 1. إعداد حالات الإدارة (Admin States)
+# 1. إعداد حالات الإدارة - Admin States
 # ============================================================
 class AdminStates(StatesGroup):
     waiting_for_new_token = State()      
     waiting_for_broadcast = State()      
     waiting_for_broadcast_photo = State()
     waiting_for_key_value = State() 
-    waiting_for_store_id = State()      # لتحديث الـ ID
-    waiting_for_column_name = State()   # لإضافة عمود جديد
-    waiting_for_new_store_input = State() # لبناء مخزن جديد
+    # حالات إدارة المتغيرات (المجموعات والمستودعات)
+    waiting_for_var_name = State()   # لاسم المتغير الجديد
+    waiting_for_var_value = State()  # لقيمة الـ ID الجديد
 
-# ============================================================
-# 2. كيبوردات غرفة العمليات (Keyboards)
-# ============================================================
-
-# اللوحة الرئيسية
+# =========================================
+# 2. كيبوردات غرفة عمليات المطور
+# =========================================
 def get_main_admin_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -4334,42 +4332,101 @@ def get_main_admin_kb():
         InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
         InlineKeyboardButton("🔄 تحديث النظام", callback_data="admin_restart_now"),
         InlineKeyboardButton("🔑 مفاتيح GROQ", callback_data="admin_keys_hub"),
-        InlineKeyboardButton("📦 إدارة المخازن", callback_data="manage_stores_main") 
+        # الزر الجديد لإدارة المجموعات (المستودعات)
+        InlineKeyboardButton("📦 متغيرات النظام", callback_data="manage_vars_main") 
     )
     kb.row(InlineKeyboardButton("🔐 استبدال توكين البوت", callback_data="admin_change_token"))
     kb.row(InlineKeyboardButton("❌ إغلاق اللوحة", callback_data="botq_close"))
     return kb
 
-# لوحة مفاتيح GROQ
-def get_keys_management_kb():
+# كيبورد إدارة متغيرات النظام (ديناميكي من سوبابيس)
+async def get_vars_management_kb():
     kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("➕ تحديث/إضافة مفتاح جديد", callback_data="admin_update_any_key"),
-        InlineKeyboardButton("💎 تفعيل G_KEY_1", callback_data="gkey_G_KEY_1"),
-        InlineKeyboardButton("💎 تفعيل G_KEY_2", callback_data="gkey_G_KEY_2"),
-        InlineKeyboardButton("💎 تفعيل G_KEY_3", callback_data="gkey_G_KEY_3"),
-        InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")
-    )
-    return kb
-
-# لوحة إدارة المخازن (ديناميكية من سوبابيس)
-async def get_stores_management_kb():
-    kb = InlineKeyboardMarkup(row_width=1)
-    res = supabase.table("groups_environments").select("group_name, group_id").execute()
+    # جلب المتغيرات المسجلة في جدول bot_variables
+    res = supabase.table("bot_variables").select("*").execute()
     
-    for store in res.data:
+    for var in res.data:
         kb.add(InlineKeyboardButton(
-            f"📦 {store['group_name']} ({store['group_id']})", 
-            callback_data=f"manage_store_{store['group_id']}"
+            f"⚙️ {var['var_name']}: {var['var_value']}", 
+            callback_data=f"edit_var_{var['var_name']}"
         ))
     
-    kb.add(InlineKeyboardButton("➕ بناء مخزن جديد", callback_data="build_new_store"))
-    kb.add(InlineKeyboardButton("🛠️ إضافة عمود جديد لسوبابيس", callback_data="admin_add_column"))
-    kb.add(InlineKeyboardButton("🔙 رجوع للرئيسية", callback_data="admin_back"))
+    kb.add(InlineKeyboardButton("➕ إضافة متغير (مخزن) جديد", callback_data="add_new_var"))
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_back"))
     return kb
 
 # ============================================================
-# 3. معالجات لوحة التحكم الرئيسية (Dashboard Handlers)
+# 3. معالجات إدارة متغيرات النظام (المستودعات والسجلات)
+# ============================================================
+
+# دخول لوحة إدارة المتغيرات
+@dp.callback_query_handler(lambda c: c.data == "manage_vars_main", user_id=ADMIN_ID)
+async def admin_manage_vars_hub(c: types.CallbackQuery):
+    reply_markup = await get_vars_management_kb()
+    txt = (
+        "📦 <b>إدارة مستودعات ومتغيرات النظام</b>\n"
+        "━━━━━━━━━━━━━━\n"
+        "هذه المجموعات تعمل كمخازن وسجلات للبوت.\n"
+        "يمكنك تحديث الـ ID أو إضافة مخزن جديد بالكامل."
+    )
+    await c.message.edit_text(txt, reply_markup=reply_markup, parse_mode="HTML")
+
+# --- أ: تحديث قيمة متغير موجود ---
+@dp.callback_query_handler(lambda c: c.data.startswith("edit_var_"), user_id=ADMIN_ID)
+async def ask_to_edit_var(c: types.CallbackQuery, state: FSMContext):
+    var_name = c.data.replace("edit_var_", "")
+    await AdminStates.waiting_for_var_value.set()
+    await state.update_data(target_var=var_name, mode="update") # وضع التحديث
+    
+    await c.message.edit_text(
+        f"🔄 <b>تحديث المعرف لـ:</b> <code>{var_name}</code>\n"
+        "أرسل الـ ID الجديد للمجموعة الآن (يبدأ بـ -100):",
+        parse_mode="HTML"
+    )
+
+# --- ب: إضافة متغير جديد تماماً ---
+@dp.callback_query_handler(text="add_new_var", user_id=ADMIN_ID)
+async def start_add_var(c: types.CallbackQuery):
+    await AdminStates.waiting_for_var_name.set()
+    await c.message.edit_text(
+        "✨ <b>إضافة مخزن/متغير جديد</b>\n"
+        "أرسل اسم المتغير بالإنجليزي (مثال: <code>GALLERY_GROUP</code>):",
+        parse_mode="HTML"
+    )
+
+@dp.message_handler(state=AdminStates.waiting_for_var_name, user_id=ADMIN_ID)
+async def get_var_name_to_add(message: types.Message, state: FSMContext):
+    var_name = message.text.strip().upper().replace(" ", "_")
+    await state.update_data(target_var=var_name, mode="insert") # وضع الإضافة
+    await AdminStates.waiting_for_var_value.set()
+    await message.answer(f"✅ تم اعتماد الاسم: <code>{var_name}</code>\nأرسل الآن الـ ID الخاص بالمجموعة:")
+
+# --- ج: الحفظ النهائي (للتحديث أو الإضافة) ---
+@dp.message_handler(state=AdminStates.waiting_for_var_value, user_id=ADMIN_ID)
+async def save_var_to_supabase(message: types.Message, state: FSMContext):
+    try:
+        new_id = int(message.text)
+        data = await state.get_data()
+        var_name = data.get("target_var")
+        mode = data.get("mode")
+
+        if mode == "update":
+            supabase.table("bot_variables").update({"var_value": new_id}).eq("var_name", var_name).execute()
+            await message.answer(f"✅ تم تحديث <code>{var_name}</code> بنجاح!", parse_mode="HTML")
+        else:
+            supabase.table("bot_variables").insert({
+                "var_name": var_name, 
+                "var_value": new_id, 
+                "description": "تمت الإضافة من البوت"
+            }).execute()
+            await message.answer(f"🚀 تم إنشاء المتغير <code>{var_name}</code> بنجاح!", parse_mode="HTML")
+            
+        await state.finish()
+    except Exception as e:
+        await message.answer(f"❌ حدث خطأ: يرجى التأكد من إرسال رقم ID صحيح.\n{e}")
+
+# ============================================================
+# 4. المعالجات العامة (لوحتي، إغلاق، رجوع)
 # ============================================================
 
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
@@ -4379,7 +4436,7 @@ async def admin_dashboard(message: types.Message):
         res = supabase.table("groups_hub").select("*").execute()
         active = len([g for g in res.data if g['status'] == 'active'])
         total_points = sum([g.get('total_group_score', 0) for g in res.data])
-        
+
         txt = (
             "👑 <b>غرفة العمليات الرئيسية</b>\n"
             "━━━━━━━━━━━━━━\n"
@@ -4389,96 +4446,20 @@ async def admin_dashboard(message: types.Message):
             "👇 اختر قسماً لإدارته:"
         )
         await message.answer(txt, reply_markup=get_main_admin_kb(), parse_mode="HTML")
-    except Exception as e:
+    except:
         await message.answer("❌ خطأ في الاتصال بقاعدة البيانات.")
 
 @dp.callback_query_handler(lambda c: c.data == "admin_back", user_id=ADMIN_ID, state="*")
 async def admin_back_to_main(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    await c.message.edit_text("👑 <b>غرفة العمليات الرئيسية</b>", reply_markup=get_main_admin_kb(), parse_mode="HTML")
+    # إعادة استدعاء اللوحة الرئيسية
+    await admin_dashboard(c.message)
+    await c.message.delete() # حذف الرسالة القديمة لتجنب التكرار
 
-# ============================================================
-# 4. معالجات إدارة المخازن (Store Management Handlers)
-# ============================================================
-
-@dp.callback_query_handler(lambda c: c.data == "manage_stores_main", user_id=ADMIN_ID)
-async def admin_manage_stores_hub(c: types.CallbackQuery):
-    reply_markup = await get_stores_management_kb()
-    txt = "📦 <b>إدارة قواعد المخازن والبيئات</b>\n━━━━━━━━━━━━━━"
-    await c.message.edit_text(txt, reply_markup=reply_markup, parse_mode="HTML")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("manage_store_"), user_id=ADMIN_ID)
-async def manage_single_store(c: types.CallbackQuery):
-    store_id = c.data.replace("manage_store_", "")
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("🔄 تحديث الـ ID (تعافي)", callback_data=f"update_id_{store_id}"),
-        InlineKeyboardButton("🎭 تغيير البيئة (env_type)", callback_data=f"edit_env_{store_id}"),
-        InlineKeyboardButton("🗑️ حذف المخزن", callback_data=f"delete_store_{store_id}"),
-        InlineKeyboardButton("🔙 رجوع", callback_data="manage_stores_main")
-    )
-    await c.message.edit_text(f"⚙️ <b>إدارة المخزن:</b> <code>{store_id}</code>", reply_markup=kb, parse_mode="HTML")
-
-# بناء مخزن جديد
-@dp.callback_query_handler(text="build_new_store", user_id=ADMIN_ID)
-async def build_store_start(c: types.CallbackQuery):
-    await AdminStates.waiting_for_new_store_input.set()
-    await c.message.edit_text("✨ أرسل الآن الـ ID الجديد أو Forward لرسالة من المجموعة:")
-
-@dp.message_handler(state=AdminStates.waiting_for_new_store_input, user_id=ADMIN_ID)
-async def save_new_store(message: types.Message, state: FSMContext):
-    t_id = message.forward_from_chat.id if message.forward_from_chat else int(message.text)
-    t_name = message.forward_from_chat.title if message.forward_from_chat else f"مخزن_{t_id}"
-    try:
-        supabase.table("groups_environments").insert({"group_id": t_id, "group_name": t_name}).execute()
-        await message.answer(f"✅ تم إنشاء المخزن: {t_name}")
-    except:
-        await message.answer("⚠️ المخزن موجود مسبقاً.")
-    await state.finish()
-
-# تحديث ID (التعافي)
-@dp.callback_query_handler(lambda c: c.data.startswith("update_id_"), user_id=ADMIN_ID)
-async def update_id_start(c: types.CallbackQuery, state: FSMContext):
-    old_id = c.data.replace("update_id_", "")
-    await AdminStates.waiting_for_store_id.set()
-    await state.update_data(old_id=old_id)
-    await c.message.edit_text(f"🔄 أرسل الـ ID الجديد للمخزن <code>{old_id}</code>:", parse_mode="HTML")
-
-@dp.message_handler(state=AdminStates.waiting_for_store_id, user_id=ADMIN_ID)
-async def update_id_execute(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    new_id = int(message.text)
-    try:
-        supabase.table("groups_environments").update({"group_id": new_id}).eq("group_id", data['old_id']).execute()
-        await message.answer("✅ تم التحديث بنجاح.")
-    except Exception as e:
-        await message.answer(f"❌ فشل التحديث: {e}")
-    await state.finish()
-
-# ============================================================
-# 5. معالجات سوبابيس (SQL & Structure)
-# ============================================================
-
-@dp.callback_query_handler(text="admin_add_column", user_id=ADMIN_ID)
-async def ask_col(c: types.CallbackQuery):
-    await AdminStates.waiting_for_column_name.set()
-    await c.message.edit_text("📝 أرسل اسم العمود الجديد لجدول المخازن:")
-
-@dp.message_handler(state=AdminStates.waiting_for_column_name, user_id=ADMIN_ID)
-async def add_col_sql(message: types.Message, state: FSMContext):
-    sql = f"ALTER TABLE groups_environments ADD COLUMN {message.text.strip()} TEXT;"
-    try:
-        supabase.rpc("exec_sql", {"sql": sql}).execute()
-        await message.answer(f"✅ تم إضافة العمود {message.text} بنجاح.")
-    except Exception as e:
-        await message.answer(f"❌ خطأ SQL: {e}")
-    await state.finish()
-
-# إغلاق اللوحة
 @dp.callback_query_handler(text="botq_close", user_id=ADMIN_ID)
-async def close_admin(c: types.CallbackQuery):
+async def close_admin_panel(c: types.CallbackQuery):
     await c.message.delete()
-    await c.answer("تم الإغلاق.")
+    await c.answer("تم إغلاق غرفة العمليات.")
 # --- 1. معالج الأمر الرئيسي /admin (المعدل للنظام الموحد) ---
 @dp.message_handler(commands=['admin'], user_id=ADMIN_ID)
 @dp.message_handler(lambda m: m.text in ['لوحتي', 'المطور', 'غرفة العمليات'], user_id=ADMIN_ID)
