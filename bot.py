@@ -3551,9 +3551,6 @@ async def engine_user_questions(chat_id, quiz_data, owner_name):
 
 current_key_index = 0 # متغير تدوير المفاتيح
 # ============================================================
-# 🔄 محرك التلميحات الذكي بنظام التدوير الآلي (ياسر المطور)
-# ============================================================
-# ============================================================
 # 🔄 محرك التلميحات الذكي (ياسر المطور) - نظام المخازن فقط
 # ============================================================
 async def generate_smart_hint(answer_text, force_refresh=False):
@@ -3629,7 +3626,13 @@ async def generate_smart_hint(answer_text, force_refresh=False):
 
     # 4. تلميح الطوارئ
     return f"💡 الحرف الأول: ({answer_text[0]}) | الطول: {len(answer_text)} حروف"
-    
+    async def delete_after(message, delay):
+    await asyncio.sleep(delay)
+    try: 
+        await message.delete()
+    except Exception: 
+        pass
+        
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
