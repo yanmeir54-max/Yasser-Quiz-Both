@@ -3626,13 +3626,14 @@ async def generate_smart_hint(answer_text, force_refresh=False):
 
     # 4. تلميح الطوارئ
     return f"💡 الحرف الأول: ({answer_text[0]}) | الطول: {len(answer_text)} حروف"
-    async def delete_after(message, delay):
+    
+async def delete_after(message, delay):
     await asyncio.sleep(delay)
     try: 
         await message.delete()
     except Exception: 
         pass
-        
+           
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
