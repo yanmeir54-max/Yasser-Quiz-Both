@@ -4114,23 +4114,27 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         
 # =======================================
 # --- [ بداية الدالة من العمود 0 لضمان عدم وجود SyntaxError ] ---
+import re
+import difflib
 
 def is_answer_correct(user_msg, correct_ans):
     """
-    محرك رصد الإجابات الذكي (ياسر المطور - النسخة الديناميكية)
+    محرك رصد الإجابات الذكي (ياسر المطور - النسخة الشاملة للأرقام واللغة)
     """
+
     if not user_msg or not correct_ans: 
         return False
 
-    # 1. قاموس تحويل الأرقام
+    # 1. قاموس الأرقام (قيم عددية للعمليات الحسابية)
     num_map = {
-        "واحد": "1", "واحده": "1", "احد": "1", "اثنان": "2", "اثنين": "2",
-        "ثلاثه": "3", "اربع": "4", "خمسه": "5", "سته": "6", "سبعه": "7",
-        "ثمانيه": "8", "تسعه": "9", "عشره": "10", "عشرين": "20", "عشرون": "20",
-        "ثلاثين": "30", "ثلاثون": "30", "مائه": "100", "الف": "1000"
+        "واحد": 1, "واحده": 1, "احد": 1, "اثنان": 2, "اثنين": 2,
+        "ثلاثه": 3, "اربع": 4, "خمسه": 5, "سته": 6, "سبعه": 7,
+        "ثمانيه": 8, "تسعه": 9, "عشره": 10, "عشرين": 20, "عشرون": 20,
+        "ثلاثين": 30, "ثلاثون": 30, "اربعين": 40, "اربعون": 40,
+        "خمسين": 50, "خمسون": 50, "مائه": 100, "الف": 1000
     }
 
-    # 2. قاموس الحروف للتهجئة الديناميكية
+    # 2. قاموس الحروف للتهجئة الصوتية
     char_map = {
         'a': 'ا', 'b': 'ب', 'c': 'ك', 'd': 'د', 'e': 'ا', 'f': 'ف', 'g': 'ج', 
         'h': 'ه', 'i': 'ي', 'j': 'ج', 'k': 'ك', 'l': 'ل', 'm': 'م', 'n': 'ن', 
@@ -4141,64 +4145,97 @@ def is_answer_correct(user_msg, correct_ans):
     stop_words = ["هو", "هي", "ال", "انه", "انها", "يكون", "يعتبر", "اسمها", "اسمه"]
 
     def clean_logic(text):
+        """مرحلة التفكيك، المعالجة الرقمية، وإعادة البناء"""
         text = str(text).strip().lower()
-        # تنظيف التشكيل
-        text = re.sub(r'[\u064B-\u0652]', '', text) 
-
-        # تحويل الإنجليزي لنطق عربي
+        # إزالة التشكيل
+        text = re.sub(r'[\u064B-\u0652]', '', text)
+        
+        # 1. تحويل الفرانكو/النطق الإنجليزي
         words = text.split()
-        translated_words = []
+        translated = []
         for w in words:
             if any(c.isascii() and c.isalpha() for c in w):
-                new_w = "".join([char_map.get(char, char) for char in w])
-                w = new_w
-            translated_words.append(w)
-        text = " ".join(translated_words)
+                w = "".join([char_map.get(c, c) for c in w])
+            translated.append(w)
         
-        # توحيد الحروف الضعيفة
+        text = " ".join(translated)
+        # 2. توحيد الحروف الضعيفة والرموز
         text = re.sub(r'[أإآ]', 'ا', text)
         text = re.sub(r'ة', 'ه', text)
         text = re.sub(r'ى', 'ي', text)
-        text = re.sub(r'[^\w\s]', '', text)
+        text = re.sub(r'[^\w\s]', ' ', text) # استبدال الرموز بمسافة للحفاظ على فصل الأرقام
         
-        words = text.split()
-        cleaned_words = []
-        for w in words:
-            if w.startswith("ال") and len(w) > 4:
-                w = w[2:]
-            w = num_map.get(w, w)
-            if w in stop_words: continue
-            cleaned_words.append(w)
-        return " ".join(cleaned_words)
+        raw_words = text.split()
+        processed_words = []
+        
+        # 3. محرك دمج الأرقام المركبة (مثل: اثنين وعشرين -> 22)
+        i = 0
+        while i < len(raw_words):
+            w = raw_words[i]
+            
+            # حذف "ال" التعريف الزائدة
+            if w.startswith("ال") and len(w) > 4: w = w[2:]
+            
+            # أ- معالجة الأرقام المفصولة بـ "و" (اثنين و عشرين)
+            if i + 2 < len(raw_words) and raw_words[i+1] == "و":
+                w1, w2 = w, raw_words[i+2]
+                if w1 in num_map and w2 in num_map:
+                    processed_words.append(str(num_map[w1] + num_map[w2]))
+                    i += 3
+                    continue
+            
+            # ب- معالجة الأرقام الملتصقة بالواو (اثنين وعشرين)
+            if "و" in w and len(w) > 3:
+                parts = w.split("و")
+                # التأكد أن ما قبل وبعد الواو أرقام
+                p1 = parts[0]
+                p2 = parts[1]
+                if p1 in num_map and p2 in num_map:
+                    processed_words.append(str(num_map[p1] + num_map[p2]))
+                    i += 1
+                    continue
+            
+            # ج- تحويل الأرقام الفردية واستبعاد كلمات الحشو
+            res = str(num_map.get(w, w))
+            if res not in stop_words:
+                processed_words.append(res)
+            i += 1
+            
+        return processed_words
 
-    user_clean = clean_logic(user_msg)
-    correct_clean = clean_logic(correct_ans)
+    user_words = clean_logic(user_msg)
+    correct_words = clean_logic(correct_ans)
 
-    # 1. التطابق التام
-    if user_clean == correct_clean:
+    # المرحلة 1: التطابق التام
+    if " ".join(user_words) == " ".join(correct_words):
         return True
 
-    # 2. نظام الاحتواء والذكاء التقني
-    correct_words = correct_clean.split()
-    user_words = user_clean.split()
-    first_word = correct_words[0] if correct_words else ""
-    is_technical = any(char.isdigit() for char in first_word)
-
-    if not is_technical:
-        correct_len = len(correct_words)
-        if correct_len == 2:
-            for u_w in user_words:
-                if len(u_w) > 3 and u_w in correct_words:
-                    return True
-        elif correct_len >= 3:
-            matched_count = sum(1 for u_w in user_words if u_w in correct_words)
-            if matched_count >= 2:
+    # المرحلة 2: مطابقة الكلمات الذكية (SequenceMatcher للكلمات)
+    for u in user_words:
+        for c in correct_words:
+            if u == c or difflib.SequenceMatcher(None, u, c).ratio() >= 0.85:
                 return True
 
-    # 3. نظام التشابه المرن (Fuzzy Matching)
-    similarity = difflib.SequenceMatcher(None, user_clean, correct_clean).ratio()
-    return similarity >= 0.80
+    # المرحلة 3: مطابقة الشظايا (Subwords) للأرشفة والالتصاق
+    def subword_match(u_list, c_list):
+        for u in u_list:
+            if len(u) < 3: continue
+            u_subs = [u[i:i+3] for i in range(len(u)-2)]
+            for c in c_list:
+                if len(c) < 3: continue
+                c_subs = [c[i:i+3] for i in range(len(c)-2)]
+                match_count = sum(1 for us in u_subs if any(
+                    difflib.SequenceMatcher(None, us, cs).ratio() >= 0.85 for cs in c_subs
+                ))
+                if match_count / max(len(c_subs), 1) > 0.6:
+                    return True
+        return False
 
+    if subword_match(user_words, correct_words):
+        return True
+
+    # المرحلة 4: نظام التشابه المرن للجملة الكاملة
+    return difflib.SequenceMatcher(None, " ".join(user_words), " ".join(correct_words)).ratio() >= 0.80
 # ==========================================
 # 🎯 رادار الإجابات الموحد (نسخة ياسر النهائية)
 # ==========================================
