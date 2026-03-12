@@ -4108,11 +4108,12 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
 
         except Exception as sync_err:
             logging.error(f"🚨 خطأ أثناء الترحيل من السجل أو التنظيف: {sync_err}")
-        except Exception as e:
-        logging.error(f"Error in previous block: {e}")
+        
+
 # =======================================
 # 4. نظام رصد الإجابات الذكي (ياسر المطور - النسخة الديناميكية)
 # ==========================================
+
 def is_answer_correct(user_msg, correct_ans):
     if not user_msg or not correct_ans: return False
 
