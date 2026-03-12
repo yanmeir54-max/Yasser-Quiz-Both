@@ -3553,28 +3553,23 @@ current_key_index = 0 # متغير تدوير المفاتيح
 # ============================================================
 # 🔄 محرك التلميحات الذكي بنظام التدوير الآلي (ياسر المطور)
 # ============================================================
+# ============================================================
+# 🔄 محرك التلميحات الذكي (ياسر المطور) - نظام المخازن فقط
+# ============================================================
 async def generate_smart_hint(answer_text, force_refresh=False):
     answer_text = str(answer_text).strip()
-    
-    # 1. فحص الذاكرة السحابية (Skip if force_refresh is True)
-    if not force_refresh:
-        try:
-            cached_res = supabase.table("hints").select("hint").eq("word", answer_text).execute()
-            if cached_res.data:
-                return cached_res.data[0]['hint']
-        except Exception as e:
-            logging.error(f"Database Cache Error: {e}")
+    LOG_GROUP_ID = -1003740761691  # مخزنك الوحيد للبيانات
 
-    # 2. جلب قائمة المفاتيح المتاحة للتدوير
-    # سنقوم بتجربة G_KEY_1 و G_KEY_2 و G_KEY_3 بالتوالي
-    available_keys = ["G_KEY_1", "G_KEY_2", "G_KEY_3"]
+    # 1. البحث في المجموعة أولاً (بديل سوبابيس تماماً)
+    # ملاحظة: يمكنك استخدام دالة البحث في الرسائل هنا إذا كانت التلميحات مؤرشفة بهاشتاج
+    # حالياً سننتقل للتوليد لضمان الجودة
     
-    # محاولة جلب المفتاح النشط حالياً لنبدأ به توفيراً للوقت
+    # 2. جلب قائمة المفاتيح للتدوير (من سوبابيس كإعدادات نظام فقط)
+    available_keys = ["G_KEY_1", "G_KEY_2", "G_KEY_3"]
     try:
         active_res = supabase.table("system_settings").select("key_value").eq("key_name", "ACTIVE_GROQ_KEY").execute()
         if active_res.data:
             start_key = active_res.data[0]['key_value']
-            # إعادة ترتيب القائمة ليبدأ بالمفتاح الذي كان يعمل آخر مرة
             if start_key in available_keys:
                 available_keys.remove(start_key)
                 available_keys.insert(0, start_key)
@@ -3585,12 +3580,10 @@ async def generate_smart_hint(answer_text, force_refresh=False):
     
     for key_alias in available_keys:
         try:
-            # جلب التوكن الفعلي للمفتاح الحالي في الحلقة
             token_res = supabase.table("system_settings").select("key_value").eq("key_name", key_alias).execute()
             active_token = token_res.data[0]['key_value'] if token_res.data else None
             
-            if not active_token:
-                continue
+            if not active_token: continue
 
             headers = {"Authorization": f"Bearer {active_token}", "Content-Type": "application/json"}
             payload = {
@@ -3605,7 +3598,6 @@ async def generate_smart_hint(answer_text, force_refresh=False):
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, headers=headers, json=payload, timeout=10.0)
                 
-                # الحالة (A): النجاح ✅
                 if response.status_code == 200:
                     ai_hint = response.json()['choices'][0]['message']['content'].strip()
                     final_hint = (
@@ -3616,44 +3608,28 @@ async def generate_smart_hint(answer_text, force_refresh=False):
                         f"❃╚════════════════╝❃"
                     )
                     
-                    # تحديث المفتاح الناجح في الإعدادات ليكون هو الأساسي مستقبلاً
+                    # تحديث المفتاح النشط في سوبابيس (لأنه إعداد نظام)
                     supabase.table("system_settings").update({"key_value": key_alias}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
                     
-                    # حفظ التلميح في الذاكرة السحابية
-                    supabase.table("hints").upsert({"word": answer_text, "hint": final_hint}).execute()
+                    # --- [الحفظ النهائي في المجموعه فقط] ---
+                    # لا يوجد سوبابيس هنا نهائياً
+                    await bot.send_message(
+                        LOG_GROUP_ID, 
+                        f"📦 <b>أرشفة تلميحة:</b>\n🔑 الكلمة: {answer_text}\n📝 {final_hint}", 
+                        parse_mode="HTML"
+                    )
+                    
                     return final_hint
                 
-                # الحالة (B): فشل المفتاح الحالي ❌ (سيقوم بتجربة المفتاح التالي في القائمة)
                 else:
-                    error_status = response.status_code
-                    # إرسال تنبيه للمطور عن المفتاح المعطل تحديداً
-                    alert_text = (
-                        f"⚠️ <b>تنبيه تعطل مفتاح!</b>\n"
-                        f"━━━━━━━━━━━━━━\n"
-                        f"📌 المفتاح المعطل: <code>{key_alias}</code>\n"
-                        f"🚫 كود الخطأ: <code>{error_status}</code>\n"
-                        f"🔄 الإجراء: <b>يتم الآن الانتقال للمفتاح التالي تلقائياً...</b>"
-                    )
-                    await bot.send_message(ADMIN_ID, alert_text, parse_mode="HTML")
-                    continue # العودة لبداية الحلقة وتجربة المفتاح التالي
+                    continue # فشل المفتاح؟ جرب اللي بعده بصمت
 
-        except Exception as e:
-            logging.error(f"Error rotating key {key_alias}: {e}")
+        except Exception:
             continue
 
-    # 4. تلميح الطوارئ (إذا فشلت جميع المفاتيح في التدوير)
-    return (
-        f"💡 <b>〔 تلميح بسيط 〕</b>\n"
-        f"<b>• الحرف الأول:</b> ( {answer_text[0]} )\n"
-        f"<b>• طول الكلمة:</b> {len(answer_text)} حروف"
-    )
-async def delete_after(message, delay):
-    await asyncio.sleep(delay)
-    try: 
-        await message.delete()
-    except Exception: 
-        pass
-        
+    # 4. تلميح الطوارئ
+    return f"💡 الحرف الأول: ({answer_text[0]}) | الطول: {len(answer_text)} حروف"
+    
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
