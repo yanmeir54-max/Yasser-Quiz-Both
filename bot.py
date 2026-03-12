@@ -4105,57 +4105,27 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                 # نحذف "الأب" وبسبب CASCADE يختفي اللوج والمشاركين فوراً
                 supabase.table("active_quizzes").delete().eq("id", current_quiz_db_id).execute()
                 logging.info(f"🧹 تم تطهير النظام بالكامل للمسابقة {current_quiz_db_id}")
-
         except Exception as sync_err:
             logging.error(f"🚨 خطأ أثناء الترحيل من السجل أو التنظيف: {sync_err}")
-        
 
-# =======================================
-# 4. نظام رصد الإجابات الذكي (ياسر المطور - النسخة الديناميكية)
-# ==========================================
+# --- [ بداية الدالة من العمود 0 لضمان عدم وجود SyntaxError ] ---
 
 def is_answer_correct(user_msg, correct_ans):
-    if not user_msg or not correct_ans: return False
+    """
+    محرك رصد الإجابات الذكي (ياسر المطور - النسخة الديناميكية)
+    """
+    if not user_msg or not correct_ans: 
+        return False
 
-    # 1. قاموس تحويل الأرقام (حل مشكلة 20 vs عشرين)
+    # 1. قاموس تحويل الأرقام
     num_map = {
-        # الآحاد (بمختلف الصيغ)
-        "واحد": "1", "واحده": "1", "احد": "1",
-        "اثنان": "2", "اثنين": "2", "اثنتان": "2", "اثنتين": "2",
-        "ثلاثه": "3", "ثلاث": "3",
-        "اربع": "4", "اربعه": "4",
-        "خمسه": "5", "خمس": "5",
-        "سته": "6", "ست": "6",
-        "سبعه": "7", "سبع": "7",
-        "ثمانيه": "8", "ثمان": "8", "ثماني": "8",
-        "تسعه": "9", "تسع": "9",
-        "عشره": "10", "عشر": "10",
-
-        # الأعداد المركبة (11-19)
-        "احد عشر": "11", "احدى عشر": "11", "احدى عشره": "11",
-        "اثنا عشر": "12", "اثني عشر": "12", "اثنتا عشره": "12",
-        "ثلاثه عشر": "13", "ثلاث عشر": "13", "ثلاث عشره": "13",
-        "اربعه عشر": "14", "اربع عشر": "14",
-        "خمسه عشر": "15", "خمس عشر": "15",
-        "سته عشر": "16", "ست عشر": "16",
-        "سبعه عشر": "17", "سبع عشر": "17",
-        "ثمانيه عشر": "18", "ثماني عشر": "18",
-        "تسعه عشر": "19", "تسع عشر": "19",
-
-        # العقود
-        "عشرين": "20", "عشرون": "20",
-        "ثلاثين": "30", "ثلاثون": "30",
-        "اربعين": "40", "اربعون": "40",
-        "خمسين": "50", "خمسون": "50",
-        "ستين": "60", "ستون": "60",
-        "سبعين": "70", "سبعون": "70",
-        "ثمانين": "80", "ثمانون": "80",
-        "تسعين": "90", "تسعون": "90",
-        "مائه": "100", "مئة": "100", "مائة": "100",
-        "الف": "1000"
+        "واحد": "1", "واحده": "1", "احد": "1", "اثنان": "2", "اثنين": "2",
+        "ثلاثه": "3", "اربع": "4", "خمسه": "5", "سته": "6", "سبعه": "7",
+        "ثمانيه": "8", "تسعه": "9", "عشره": "10", "عشرين": "20", "عشرون": "20",
+        "ثلاثين": "30", "ثلاثون": "30", "مائه": "100", "الف": "1000"
     }
 
-    # 2. قاموس الحروف للتهجئة الديناميكية (English to Arabic Char Map)
+    # 2. قاموس الحروف للتهجئة الديناميكية
     char_map = {
         'a': 'ا', 'b': 'ب', 'c': 'ك', 'd': 'د', 'e': 'ا', 'f': 'ف', 'g': 'ج', 
         'h': 'ه', 'i': 'ي', 'j': 'ج', 'k': 'ك', 'l': 'ل', 'm': 'م', 'n': 'ن', 
@@ -4166,19 +4136,16 @@ def is_answer_correct(user_msg, correct_ans):
     stop_words = ["هو", "هي", "ال", "انه", "انها", "يكون", "يعتبر", "اسمها", "اسمه"]
 
     def clean_logic(text):
-        text = text.strip().lower()
+        text = str(text).strip().lower()
         # تنظيف التشكيل
         text = re.sub(r'[\u064B-\u0652]', '', text) 
 
-        # --- [ المحرك الديناميكي: تحويل الكلمات الإنجليزية لنطق عربي ] ---
+        # تحويل الإنجليزي لنطق عربي
         words = text.split()
         translated_words = []
         for w in words:
-            # إذا كانت الكلمة تحتوي على حروف إنجليزية، يتم تهجئتها بالعربي حرفاً بحرف
             if any(c.isascii() and c.isalpha() for c in w):
-                new_w = ""
-                for char in w:
-                    new_w += char_map.get(char, char)
+                new_w = "".join([char_map.get(char, char) for char in w])
                 w = new_w
             translated_words.append(w)
         text = " ".join(translated_words)
@@ -4187,7 +4154,6 @@ def is_answer_correct(user_msg, correct_ans):
         text = re.sub(r'[أإآ]', 'ا', text)
         text = re.sub(r'ة', 'ه', text)
         text = re.sub(r'ى', 'ي', text)
-        # إزالة الرموز وعلامات الترقيم
         text = re.sub(r'[^\w\s]', '', text)
         
         words = text.split()
@@ -4203,45 +4169,31 @@ def is_answer_correct(user_msg, correct_ans):
     user_clean = clean_logic(user_msg)
     correct_clean = clean_logic(correct_ans)
 
-    # تجهيز القوائم للفحص التفصيلي
-    user_words = user_clean.split()
-    correct_words = correct_clean.split()
-
-    # 1. التطابق التام (سريع)
+    # 1. التطابق التام
     if user_clean == correct_clean:
         return True
 
-    # --- [ نظام الاحتواء المتدرج مع الحماية التقنية ] ---
-    # فحص إذا كانت الإجابة تبدأ برقم أو حرف إنجليزي (بعد التنظيف يكون قد تحول لعربي)
+    # 2. نظام الاحتواء والذكاء التقني
+    correct_words = correct_clean.split()
+    user_words = user_clean.split()
     first_word = correct_words[0] if correct_words else ""
-    # ملاحظة: التحقق من الأرقام فقط لأن الحروف الإنجليزية تحولت بالفعل
     is_technical = any(char.isdigit() for char in first_word)
 
-    # لا نسمح بنظام الاحتواء إذا كانت الإجابة تقنية/رقمية
     if not is_technical:
         correct_len = len(correct_words)
-        
-        # أ. إجابة من كلمتين: إذا كتب واحدة منها (بشرط طول الكلمة > 3)
         if correct_len == 2:
             for u_w in user_words:
                 if len(u_w) > 3 and u_w in correct_words:
                     return True
-        
-        # ب. إجابة من 3 كلمات أو أكثر: إذا كتب كلمتين منها على الأقل
         elif correct_len >= 3:
-            matched_count = 0
-            for u_w in user_words:
-                if u_w in correct_words:
-                    matched_count += 1
+            matched_count = sum(1 for u_w in user_words if u_w in correct_words)
             if matched_count >= 2:
                 return True
 
-    # 2. نظام التشابه المرن (Fuzzy Matching) - 80%
+    # 3. نظام التشابه المرن (Fuzzy Matching)
     similarity = difflib.SequenceMatcher(None, user_clean, correct_clean).ratio()
-    if similarity >= 0.80:
-        return True
+    return similarity >= 0.80
 
-    return False
 # ==========================================
 # 🎯 رادار الإجابات الموحد (نسخة ياسر النهائية)
 # ==========================================
