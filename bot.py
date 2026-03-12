@@ -3647,7 +3647,13 @@ async def generate_smart_hint(answer_text, force_refresh=False):
         f"<b>• الحرف الأول:</b> ( {answer_text[0]} )\n"
         f"<b>• طول الكلمة:</b> {len(answer_text)} حروف"
     )
-
+async def delete_after(message, delay):
+    await asyncio.sleep(delay)
+    try: 
+        await message.delete()
+    except Exception: 
+        pass
+        
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
@@ -4102,7 +4108,8 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
 
         except Exception as sync_err:
             logging.error(f"🚨 خطأ أثناء الترحيل من السجل أو التنظيف: {sync_err}")
-            
+        except Exception as e:
+        logging.error(f"Error in previous block: {e}")
 # =======================================
 # 4. نظام رصد الإجابات الذكي (ياسر المطور - النسخة الديناميكية)
 # ==========================================
