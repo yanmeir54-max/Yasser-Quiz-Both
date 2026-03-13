@@ -3660,56 +3660,60 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
     random.shuffle(questions)
     overall_scores = {}
     
-    # 1️⃣ توليد رقم المسابقة (ID) في سوبابيس فوراً لضمان عدم ظهوره فارغاً
+    # 1️⃣ تسجيل المسابقة في سوبابيس فوراً (للحصول على ID وحجز القسم)
     current_quiz_id = None
     try:
-        # تحديد القسم الرئيسي للمسابقة (من أول سؤال)
         sample_q = questions[0]
-        main_cat = sample_q.get('category') or (sample_q['categories']['name'] if sample_q.get('categories') else "عام")
-        
+        # تحديد اسم القسم بدقة بناءً على نوع المحرك
+        if engine_type == "bot":
+            main_cat = sample_q.get('category') or "عام"
+        elif engine_type == "user":
+            main_cat = sample_q['categories']['name'] if (sample_q.get('categories') and isinstance(sample_q['categories'], dict)) else "أقسام الأعضاء"
+        else:
+            main_cat = "قسم خاص"
+
         quiz_reg = supabase.table("active_quizzes").insert({
             "chat_id": chat_id,
             "quiz_name": f"مسابقة {owner_name}",
-            "created_by": quiz_data.get('owner_id'),
-            "is_global": False,
+            "created_by": quiz_data.get('owner_id', 0),
+            "is_global": (engine_type == "bot"),
             "is_active": True,
-            "category_name": main_cat  # حفظ القسم هنا ليظهر في الجداول
+            "category_name": main_cat  # حفظ القسم ليظهر في سجلات الإجابات
         }).execute()
         
         if quiz_reg.data:
             current_quiz_id = quiz_reg.data[0]['id']
+            logging.info(f"✅ تم حجز ID للمسابقة {engine_type}: {current_quiz_id}")
     except Exception as e:
         logging.error(f"❌ فشل حجز ID للمسابقة: {e}")
 
-    # 🟢 قوائم الصيد للمحرك الخاص
+    # قوائم لحذف رسائل الأسئلة لاحقاً لتنظيف الشات
     questions_to_delete = []
     results_to_delete = []
 
     for i, q in enumerate(questions):
-        # [أ] استخراج الإجابة والقسم بدقة
+        # [أ] تحديد الإجابة والقسم لكل سؤال على حدة
         if engine_type == "bot":
             ans = str(q.get('correct_answer') or "").strip()
-            # التأكد من جلب اسم القسم من جدول bot_categories
             cat_name = q.get('category') or "بوت"
-            
         elif engine_type == "user":
             ans = str(q.get('answer_text') or q.get('correct_answer') or "").strip()
-            # هنا الربط مع جدول categories (أقسام الأعضاء)
             cat_name = q['categories']['name'] if (q.get('categories') and isinstance(q['categories'], dict)) else "قسم خاص"
-            
         else:
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
-            cat_name = "قسم مخصص 🔒"
+            cat_name = "مخصص 🔒"
 
-        # 2️⃣ تحديث الذاكرة النشطة بالمعلومات الكاملة
+        # 2️⃣ تحديث الذاكرة النشطة (ليستخدمها الرادار في تسجيل الإجابات)
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
             "winners": [], 
             "mode": quiz_data['mode'], 
             "hint_sent": False,
-            "quiz_id": current_quiz_id, # المعرف الذي يمنع الفراغ في CSV
-            "category": cat_name        # اسم القسم (جغرافيا/تاريخ/الخ)
+            "quiz_id": current_quiz_id, # المعرف المولد (لن يظهر NULL في CSV)
+            "category": cat_name,       # اسم القسم (جغرافيا/تاريخ/الخ)
+            "current_index": i + 1,
+            "total_questions": len(questions)
         }
         # --- [ نظام التلميح العادي المنفصل ] ---
         normal_hint_str = ""
