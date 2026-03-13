@@ -68,7 +68,7 @@ async def auto_database_cleaner():
     while True:
         try:
             # حساب الوقت (الآن - دقيقة واحدة) بصيغة سوبابيس (UTC)
-            cutoff_time = (datetime.utcnow() - timedelta(minutes=1)).isoformat()
+            cutoff_time = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
 
             # حذف من الجدول الأساسي (سيحذف السجلات الأخرى تلقائياً بفضل الـ CASCADE)
             # تم استخدام .delete() مع شرط التوقيت
