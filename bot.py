@@ -654,7 +654,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             # الرصيد
             pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # رقم الحساب
-            pilmoji.text((505, 630), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+            pilmoji.text((505, 600), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
         # 6. إخراج الصورة والبيانات (للكابشن)
         output = io.BytesIO()
         template.save(output, format="PNG")
@@ -3659,31 +3659,58 @@ async def delete_after(message, delay):
 async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_type):
     random.shuffle(questions)
     overall_scores = {}
+    
+    # 1️⃣ توليد رقم المسابقة (ID) في سوبابيس فوراً لضمان عدم ظهوره فارغاً
+    current_quiz_id = None
+    try:
+        # تحديد القسم الرئيسي للمسابقة (من أول سؤال)
+        sample_q = questions[0]
+        main_cat = sample_q.get('category') or (sample_q['categories']['name'] if sample_q.get('categories') else "عام")
+        
+        quiz_reg = supabase.table("active_quizzes").insert({
+            "chat_id": chat_id,
+            "quiz_name": f"مسابقة {owner_name}",
+            "created_by": quiz_data.get('owner_id'),
+            "is_global": False,
+            "is_active": True,
+            "category_name": main_cat  # حفظ القسم هنا ليظهر في الجداول
+        }).execute()
+        
+        if quiz_reg.data:
+            current_quiz_id = quiz_reg.data[0]['id']
+    except Exception as e:
+        logging.error(f"❌ فشل حجز ID للمسابقة: {e}")
+
     # 🟢 قوائم الصيد للمحرك الخاص
     questions_to_delete = []
     results_to_delete = []
 
     for i, q in enumerate(questions):
-        # 1. استخراج الإجابة والنص حسب نوع المصدر
+        # [أ] استخراج الإجابة والقسم بدقة
         if engine_type == "bot":
             ans = str(q.get('correct_answer') or "").strip()
+            # التأكد من جلب اسم القسم من جدول bot_categories
             cat_name = q.get('category') or "بوت"
+            
         elif engine_type == "user":
             ans = str(q.get('answer_text') or q.get('correct_answer') or "").strip()
-            cat_name = q['categories']['name'] if q.get('categories') else "عام"
+            # هنا الربط مع جدول categories (أقسام الأعضاء)
+            cat_name = q['categories']['name'] if (q.get('categories') and isinstance(q['categories'], dict)) else "قسم خاص"
+            
         else:
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
-            cat_name = "قسم خاص 🔒"
+            cat_name = "قسم مخصص 🔒"
 
-        # 2. تصفير حالة السؤال وتجهيز الذاكرة النشطة
+        # 2️⃣ تحديث الذاكرة النشطة بالمعلومات الكاملة
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
             "winners": [], 
             "mode": quiz_data['mode'], 
-            "hint_sent": False
+            "hint_sent": False,
+            "quiz_id": current_quiz_id, # المعرف الذي يمنع الفراغ في CSV
+            "category": cat_name        # اسم القسم (جغرافيا/تاريخ/الخ)
         }
-        
         # --- [ نظام التلميح العادي المنفصل ] ---
         normal_hint_str = ""
         if quiz_data.get('smart_hint'): # إذا فعل المستخدم زر التلميحات
@@ -3772,43 +3799,46 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
                 logging.error(f"Countdown Error: {e}")
         else:
             await asyncio.sleep(2)
-    # 7. إعلان لوحة الشرف النهائية (العرض البصري)
+    # 7. إعلان لوحة الشرف النهائية
     await send_final_results2(chat_id, overall_scores, len(questions))
 
-    # 🚀 [ الـمـسـتـقـبل الـمـلـكـي : ترحيل البيانات للجدول العالمي ]
-    # نقوم بتحويل overall_scores لشكل يتوافق مع المحرك (وضع اللاعبين في مجموعة وهمية واحدة لأنها فردية)
+    # 🚀 [ الـمـسـتـقـبـل الـمـلـكـي : ترحيل البيانات للجدول العالمي ]
     try:
-        # نحولها لشكل { "special_event": overall_scores } لكي يفهمها المحرك كمجموعة فائزة
+        # استخدام اسم القسم الفعلي (جغرافيا/تاريخ) بدلاً من كلمة "مسابقة خاصة" ثابتة
+        final_cat_name = active_quizzes[chat_id].get('category', "مسابقة خاصة")
+        
         data_to_sync = {"special_event": overall_scores}
         
-        # استدعاء المحرك مع وضع is_special=True لرفعها في عمود special_wins
-        # وتحديد أن المجموعة "special_event" هي الفائزة
         await sync_points_to_global_db(
             group_scores=data_to_sync, 
             winners_list=["special_event"], 
-            cat_name="مسابقة خاصة", 
+            cat_name=final_cat_name, # ✅ الآن سيحفظ "جغرافيا" أو "تاريخ" في السجل العالمي
             is_special=True
         )
-        logging.info("✅ : تم ترحيل نتائج المسابقة الخاصة للسجل العالمي بنجاح")
+        logging.info(f"✅ تم ترحيل نتائج {final_cat_name} للسجل العالمي.")
     except Exception as e:
-        logging.error(f"❌ : فشل ترحيل بيانات المسابقة الخاصة : {e}")
+        logging.error(f"❌ فشل ترحيل البيانات: {e}")
 
-    # 🔥 [ عملية التنظيف الشامل ] 🔥
-    # حذف الأسئلة
-    for q_mid in questions_to_delete:
+    # 🔥 [ عملية التنظيف الشاملة باستخدام الـ ID ] 🔥
+    # نجلب الـ ID الذي حجزناه في بداية المحرك
+    target_quiz_id = active_quizzes[chat_id].get('quiz_id')
+
+    if target_quiz_id:
+        # استدعاء دالة التنظيف الذكية لحذف الإجابات والمشاركين لهذه المسابقة فقط
+        await safe_cleanup_quiz(target_quiz_id)
+    
+    # تنظيف الرسائل من الشات (قوائم الصيد)
+    for q_mid in questions_to_delete + results_to_delete:
         try: 
             await bot.delete_message(chat_id, q_mid)
         except: 
             pass
 
-    # حذف قوالب الإجابة المرحلية
-    for r_mid in results_to_delete:
-        try: 
-            await bot.delete_message(chat_id, r_mid)
-        except: 
-            pass
+    # إزالة المسابقة من الذاكرة النشطة للبوت
+    if chat_id in active_quizzes:
+        del active_quizzes[chat_id]
             
-    logging.info("🧹 : تم تنظيف ساحة المسابقة بنجاح")
+    logging.info(f"🧹 تم تنظيف الساحة للمسابقة رقم {target_quiz_id}")
     
 # ==========================================
 # ==========================================
@@ -4310,22 +4340,26 @@ async def unified_answer_checker(m: types.Message):
 
             else:
                 # ==========================================
-                # 🔒 مسار المسابقات الخاصة (نظام داخلي)
+                # 🔒 مسار المسابقات الخاصة (نظام الإصلاح الشامل)
                 # ==========================================
                 # التأكد أن اللاعب لم يفز مسبقاً في هذا السؤال
                 if not any(w['id'] == uid for w in quiz.get('winners', [])):
                     
-                    # 💾 حفظ الإجابة في سوبابيس (Answers Log) - [المسابقات الخاصة]
-                    # بما أن المسابقة خاصة، قد لا تملك db_quiz_id ثابت، نستخدم معرف الشات كمرجع
+                    # 🔹 جلب البيانات من الذاكرة النشطة (التي وضعناها في بداية المحرك)
+                    db_quiz_id = quiz.get('quiz_id')    # الرقم المولد من سوبابيس
+                    cat_name = quiz.get('category', 'عام') # اسم القسم (جغرافيا/تاريخ..)
+
+                    # 💾 حفظ الإجابة في سوبابيس (جدول answers_log الجديد)
                     def save_private_to_db():
                         try:
                             supabase.table("answers_log").insert({
-                                "quiz_id": None, # أو ضع id المسابقة الخاصة إذا كان متوفراً
-                                "quiz_type": "private", # تحديد النوع كخاصة
+                                "quiz_id": db_quiz_id,          # ✅ تم التخلص من None
+                                "category_name": cat_name,      # ✅ إضافة اسم القسم
+                                "quiz_type": "private",
                                 "question_no": quiz.get('current_index', 1),
                                 "total_quiz_questions": quiz.get('total_questions', 1),
                                 "chat_id": cid,
-                                "group_name": m.chat.title,
+                                "group_name": m.chat.title or "مسابقة خاصة",
                                 "user_id": uid,
                                 "user_name": m.from_user.first_name,
                                 "answer_text": user_text,
@@ -4333,18 +4367,20 @@ async def unified_answer_checker(m: types.Message):
                                 "points_earned": 10,
                                 "speed_rank": len(quiz.get('winners', [])) + 1
                             }).execute()
-                        except Exception as e: logging.error(f"❌ خطأ حفظ النتيجة (خاصة): {e}")
+                        except Exception as e: 
+                            logging.error(f"❌ خطأ حفظ النتيجة في الجدول الجديد: {e}")
                     
+                    # تنفيذ الحفظ في خلفية البوت لضمان السرعة
                     asyncio.create_task(asyncio.to_thread(save_private_to_db))
 
-                    # تسجيل الفائز
+                    # تسجيل الفائز في ذاكرة المسابقة الحالية
                     quiz.setdefault('winners', []).append({"name": m.from_user.first_name, "id": uid})
                     
+                    # إذا كان النمط "سرعة"، نوقف السؤال فور أول إجابة صحيحة
                     if quiz.get('mode') == 'السرعة ⚡':
                         quiz['active'] = False
-                        # ملاحظة: المحرك run_universal_logic هو من سيظهر قالب النتائج 2 
-                        # فور استشعار أن active أصبحت False
                     return
+            
 # ============================================================
 # 1. إعداد حالات الإدارة - Admin States
 # ============================================================
