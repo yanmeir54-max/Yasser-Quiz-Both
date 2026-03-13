@@ -11,8 +11,9 @@ import requests
 import httpx  
 import aiohttp
 import arabic_reshaper
+from datetime import datetime, timedelta # 💡 تمت الإضافة هنا
 from aiogram import types
-from aiogram.dispatcher.filters import Text # بديل لـ F في الإصدار الثاني
+from aiogram.dispatcher.filters import Text 
 from pilmoji import Pilmoji 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from bidi.algorithm import get_display
@@ -21,10 +22,8 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from supabase import create_client, Client 
+from supabase import create_client, Client
 
-# إعداد السجلات
-logging.basicConfig(level=logging.INFO)
 # --- [ 1. إعدادات الهوية والاتصال ] ---
 ADMIN_ID = 7988144062
 OWNER_USERNAME = "@Ya_79k"
@@ -61,28 +60,32 @@ active_quizzes = {}
 cancelled_groups = set() # لحفظ المجموعات التي ضغطت إلغاء مؤقتاً
 # في أعلى الملف تماماً (Global Variable)
 answered_users_global = {}
-async def cleanup_leftover_data():
-    """
-    تنظيف مخلفات الجلسات السابقة لضمان بداية نظيفة للقاعدة
-    """
-    try:
-        # حذف أي مسابقة كانت "نشطة" عند إغلاق البوت
-        # الـ CASCADE سيتكفل بحذف المشاركين واللوج المرتبط بها تلقائياً
-        res = supabase.table("active_quizzes").delete().eq("is_active", True).execute()
-        
-        count = len(res.data) if res.data else 0
-        if count > 0:
-            logging.info(f"♻️ مكنسة الطوارئ: تم تنظيف {count} مسابقة عالقة بنجاح.")
-        else:
-            logging.info("✨ مكنسة الطوارئ: قاعدة البيانات نظيفة بالفعل.")
-            
-    except Exception as e:
-        logging.error(f"⚠️ فشل مكنسة الطوارئ في التنظيف: {e}")
+   # ==========================================
+# 🧹 دالة المنظف الآلي (تحذف البيانات بعد دقيقة واحدة)
+# ==========================================
+async def auto_database_cleaner():
+    """تقوم بحذف المسابقات والسجلات التي مر عليها دقيقة واحدة من سوبابيس"""
+    while True:
+        try:
+            # حساب الوقت (الآن - دقيقة واحدة) بصيغة سوبابيس (UTC)
+            cutoff_time = (datetime.utcnow() - timedelta(minutes=1)).isoformat()
 
-# استدعاء الدالة عند تشغيل البوت (Aiogram مثال)
-async def on_startup(dp):
-    await cleanup_leftover_data()
-   
+            # حذف من الجدول الأساسي (سيحذف السجلات الأخرى تلقائياً بفضل الـ CASCADE)
+            # تم استخدام .delete() مع شرط التوقيت
+            response = supabase.table("active_quizzes") \
+                .delete() \
+                .lt("created_at", cutoff_time) \
+                .execute()
+
+            if response.data:
+                logging.info(f"🧹 تم تنظيف {len(response.data)} مسابقات خاملة وسجلاتها بنجاح.")
+        
+        except Exception as e:
+            logging.error(f"❌ خطأ في المنظف الآلي: {e}")
+        
+        # الفحص كل 60 ثانية
+        await asyncio.sleep(60)
+    
 # ==========================================
 # 4. محركات العرض والقوالب (Display Engines) - النسخة المصلحة
 # ==========================================
@@ -4949,7 +4952,7 @@ async def process_auth_callback(c: types.CallbackQuery):
     await c.message.delete()
     await admin_manage_groups(c)
 # ==========================================
-# 5. نهاية الملف: ضمان التشغيل 24/7 (Keep-Alive)
+# 5. نهاية الملف: ضمان التشغيل 24/7 + المنظف الآلي
 # ==========================================
 from aiohttp import web
 
@@ -4958,7 +4961,7 @@ async def handle_ping(request):
     return web.Response(text="Bot is Active and Running! 🚀")
 
 if __name__ == '__main__':
-    # 1. إعداد سيرفر ويب صغير في الخلفية للرد على طلبات الـ HTTP
+    # 1. إعداد سيرفر ويب صغير في الخلفية (Keep-Alive)
     app = web.Application()
     app.router.add_get('/', handle_ping)
     
@@ -4966,18 +4969,22 @@ if __name__ == '__main__':
     runner = web.AppRunner(app)
     loop.run_until_complete(runner.setup())
     
-    # 2. تحديد المنفذ (Port): Render يستخدم غالباً 10000، و Koyeb يستخدم ما يحدده النظام
+    # 2. تحديد المنفذ وتشغيل السيرفر
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     
-    # تشغيل السيرفر كـ "مهمة" جانبية حتى لا يعطل البوت
+    # تشغيل السيرفر كـ "مهمة" جانبية
     loop.create_task(site.start())
     print(f"✅ Keep-alive server started on port {port}")
 
-    # 3. إعدادات السجلات والتشغيل النهائي للبوت
+    # 🔥 3. تشغيل "المنظف الآلي" في الخلفية (الإضافة الجديدة)
+    # سيقوم هذا المنظف بفحص سوبابيس كل دقيقة وحذف البيانات الخاملة
+    loop.create_task(auto_database_cleaner())
+    print("🧹 Auto-database cleaner is now active!")
+
+    # 4. إعدادات السجلات والتشغيل النهائي للبوت
     logging.basicConfig(level=logging.INFO)
     
     # بدء استقبال الرسائل (Polling) مع تخطي التحديثات القديمة
+    print("🤖 Bot is now polling...")
     executor.start_polling(dp, skip_updates=True)
-
-                           
