@@ -654,7 +654,7 @@ async def generate_zidni_card(user_id: int, bot, supabase):
             # الرصيد
             pilmoji.text((795, 415), fix_arabic(f"{wallet:,} ن"), font=font_info, fill=gold, anchor="ra", emoji_fontpath=emoji_path)
             # رقم الحساب
-            pilmoji.text((585, 550), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
+            pilmoji.text((505, 630), fix_number(f"ZD-{acc_num}"), font=font_info, fill=white, anchor="mm")
         # 6. إخراج الصورة والبيانات (للكابشن)
         output = io.BytesIO()
         template.save(output, format="PNG")
@@ -934,6 +934,7 @@ async def cmd_show_leaderboard(message: types.Message):
         await message.delete()
     except:
         pass # الرسالة قد تم حذفها يدوياً بالفعل
+
 # ==========================================
 # الدوال المساعدة المحدثة (حماية + أسماء حقيقية)
 # ==========================================
@@ -1652,7 +1653,7 @@ async def get_user_bank_card(message: types.Message):
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        await status_msg.edit_text("⚠️ عذراً، حدث خطأ فني غير متوقع.")
+        await status_msg.edit_text("⚠️ عذراً، ليس لديك حساب بنكي يرجى لعب مسابقة اولاً ليتم إنشاء حسابك البنكي.")
             
 
 # ==========================================
