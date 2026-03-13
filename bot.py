@@ -3663,11 +3663,11 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
     random.shuffle(questions)
     overall_scores = {}
     
-    # 1️⃣ تسجيل المسابقة في سوبابيس فوراً (للحصول على ID وحجز القسم)
+    # 1️⃣ [ أهم خطوة ] تسجيل المسابقة في سوبابيس لكي تظهر في جدول active_quizzes
     current_quiz_id = None
     try:
         sample_q = questions[0]
-        # تحديد اسم القسم بدقة بناءً على نوع المحرك
+        # تحديد اسم القسم بدقة لضمان ظهوره في الجدول
         if engine_type == "bot":
             main_cat = sample_q.get('category') or "عام"
         elif engine_type == "user":
@@ -3675,27 +3675,28 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         else:
             main_cat = "قسم خاص"
 
+        # إدراج المسابقة في سوبابيس فوراً (هذا ما سيجعل المنظف يراها ويحذفها)
         quiz_reg = supabase.table("active_quizzes").insert({
             "chat_id": chat_id,
             "quiz_name": f"مسابقة {owner_name}",
             "created_by": quiz_data.get('owner_id', 0),
             "is_global": (engine_type == "bot"),
             "is_active": True,
-            "category_name": main_cat  # حفظ القسم ليظهر في سجلات الإجابات
+            "category_name": main_cat
         }).execute()
         
         if quiz_reg.data:
             current_quiz_id = quiz_reg.data[0]['id']
-            logging.info(f"✅ تم حجز ID للمسابقة {engine_type}: {current_quiz_id}")
+            logging.info(f"✅ تم حجز ID بنجاح: {current_quiz_id} - النوع: {engine_type}")
     except Exception as e:
-        logging.error(f"❌ فشل حجز ID للمسابقة: {e}")
+        logging.error(f"❌ فشل تسجيل المسابقة في سوبابيس: {e}")
 
-    # قوائم لحذف رسائل الأسئلة لاحقاً لتنظيف الشات
+    # قوائم التنظيف لرسائل التلجرام
     questions_to_delete = []
     results_to_delete = []
 
     for i, q in enumerate(questions):
-        # [أ] تحديد الإجابة والقسم لكل سؤال على حدة
+        # [أ] استخراج الإجابة والقسم للسؤال الحالي
         if engine_type == "bot":
             ans = str(q.get('correct_answer') or "").strip()
             cat_name = q.get('category') or "بوت"
@@ -3706,18 +3707,21 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "مخصص 🔒"
 
-        # 2️⃣ تحديث الذاكرة النشطة (ليستخدمها الرادار في تسجيل الإجابات)
+        # 2️⃣ تحديث الذاكرة النشطة بالمعلومات الكاملة (للرادار)
+        # ملاحظة: "quiz_id" هنا هو المعرف الذي سيمنع ظهور NULL في CSV
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
             "winners": [], 
             "mode": quiz_data['mode'], 
             "hint_sent": False,
-            "quiz_id": current_quiz_id, # المعرف المولد (لن يظهر NULL في CSV)
-            "category": cat_name,       # اسم القسم (جغرافيا/تاريخ/الخ)
+            "quiz_id": current_quiz_id, # الربط الرسمي مع سوبابيس
+            "category": cat_name,
             "current_index": i + 1,
             "total_questions": len(questions)
         }
+
+     
         # --- [ نظام التلميح العادي المنفصل ] ---
         normal_hint_str = ""
         if quiz_data.get('smart_hint'): # إذا فعل المستخدم زر التلميحات
@@ -3809,44 +3813,47 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
     # 7. إعلان لوحة الشرف النهائية
     await send_final_results2(chat_id, overall_scores, len(questions))
 
-    # 🚀 [ الـمـسـتـقـبـل الـمـلـكـي : ترحيل البيانات للجدول العالمي ]
+    # 🚀 [ ترحيل البيانات للجدول العالمي ]
     try:
-        # استخدام اسم القسم الفعلي (جغرافيا/تاريخ) بدلاً من كلمة "مسابقة خاصة" ثابتة
-        final_cat_name = active_quizzes[chat_id].get('category', "مسابقة خاصة")
+        # جلب اسم القسم الفعلي (جغرافيا/تاريخ..) لضمان دقة الترحيل
+        final_cat_name = active_quizzes[chat_id].get('category', "عام")
         
         data_to_sync = {"special_event": overall_scores}
         
         await sync_points_to_global_db(
             group_scores=data_to_sync, 
             winners_list=["special_event"], 
-            cat_name=final_cat_name, # ✅ الآن سيحفظ "جغرافيا" أو "تاريخ" في السجل العالمي
+            cat_name=final_cat_name, 
             is_special=True
         )
-        logging.info(f"✅ تم ترحيل نتائج {final_cat_name} للسجل العالمي.")
+        logging.info(f"✅ تم ترحيل نتائج {final_cat_name} للسجل العالمي بنجاح.")
     except Exception as e:
         logging.error(f"❌ فشل ترحيل البيانات: {e}")
 
-    # 🔥 [ عملية التنظيف الشاملة باستخدام الـ ID ] 🔥
-    # نجلب الـ ID الذي حجزناه في بداية المحرك
+    # 🔥 [ المحرقة التلقائية: التنظيف باستخدام CASCADE ] 🔥
     target_quiz_id = active_quizzes[chat_id].get('quiz_id')
 
     if target_quiz_id:
-        # استدعاء دالة التنظيف الذكية لحذف الإجابات والمشاركين لهذه المسابقة فقط
-        await safe_cleanup_quiz(target_quiz_id)
+        try:
+            # بمجرد حذف هذا السطر، سوبابيس سيمسح (Answers Log) و (Participants) آلياً
+            supabase.table("active_quizzes").delete().eq("id", target_quiz_id).execute()
+            logging.info(f"🧹 تم سحق السجلات المرتبطة بالمسابقة رقم {target_quiz_id} من قاعدة البيانات.")
+        except Exception as e:
+            logging.error(f"⚠️ فشل التنظيف التلقائي من سوبابيس: {e}")
     
-    # تنظيف الرسائل من الشات (قوائم الصيد)
+    # تنظيف رسائل التلجرام لتخفيف زحمة الجروب
     for q_mid in questions_to_delete + results_to_delete:
         try: 
             await bot.delete_message(chat_id, q_mid)
         except: 
             pass
 
-    # إزالة المسابقة من الذاكرة النشطة للبوت
+    # إزالة المسابقة من ذاكرة الرام (البوت)
     if chat_id in active_quizzes:
         del active_quizzes[chat_id]
             
-    logging.info(f"🧹 تم تنظيف الساحة للمسابقة رقم {target_quiz_id}")
-    
+    logging.info(f"✨ الساحة الآن نظيفة تماماً وجاهزة لمسابقة جديدة.")
+
 # ==========================================
 # ==========================================
 
