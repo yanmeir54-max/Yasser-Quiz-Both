@@ -3893,32 +3893,28 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         if str(cid) not in group_names_map:
             group_names_map[str(cid)] = f"جروب {cid}"
 
-    # --- [ ب ] نظام الفلترة الذكي (منع الطلقة المزدوجة) ---
-    # بدلاً من الإغلاق الكامل، سنستبعد المجموعات المشغولة فقط
-    
+    # --- [ ب ] نظام الفلترة الذكي (بدلاً من الإيقاف الكامل) ---
     chats_to_broadcast = []
+    
     for cid in all_chats:
-        # 1. فحص القفل البرمجي (Memory Lock)
-        is_in_memory = (cid in active_broadcasts)
+        # فحص: هل المجموعة محجوزة في الذاكرة أو لديها مسابقة نشطة؟
+        is_busy = (cid in active_broadcasts) or (cid in active_quizzes and active_quizzes[cid].get('active'))
         
-        # 2. فحص الرادار المحلي (Active Quizzes)
-        is_active_local = (cid in active_quizzes and active_quizzes[cid].get('active'))
-        
-        if is_in_memory or is_active_local:
+        if is_busy:
             logging.warning(f"⚠️ تخطي المجموعة {cid}: مسابقة نشطة بالفعل.")
-            continue  # ننتقل للمجموعة التالية ولا نوقف الإذاعة
+            continue # "استمر" للمجموعة التالية ولا تغلق الدالة
             
+        # إذا كانت المجموعة فارغة، نضيفها للقائمة المفلترة ونحجزها
         chats_to_broadcast.append(cid)
-        active_broadcasts.add(cid) # حجز المجموعة فوراً
+        active_broadcasts.add(cid)
 
-    # إذا كانت كل المجموعات مشغولة
+    # 🚨 فحص أخير: إذا كانت كل المجموعات مشغولة ولم يتبقَ شيء
     if not chats_to_broadcast:
-        logging.error("🚫 لا توجد مجموعات متاحة لبدء الإذاعة حالياً.")
+        logging.error("🚫 جميع المجموعات المستهدفة مشغولة حالياً. تم إلغاء الإذاعة.")
         return
 
-    # الآن نستخدم chats_to_broadcast في بقية الكود بدلاً من all_chats
-    for cid in chats_to_broadcast:
-        # ابدأ الإذاعة هنا...
+    # ✅ الآن نكمل العمل باستخدام القائمة المفلترة (chats_to_broadcast)
+    logging.info(f"📡 تم حجز {len(chats_to_broadcast)} مجموعة لبدء الإذاعة.")
     try:
         # --- [ ج ] جلب وتجهيز الأسئلة ---
         raw_cats = quiz_data.get('cats', [])
