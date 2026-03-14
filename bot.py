@@ -3552,9 +3552,9 @@ async def engine_user_questions(chat_id, quiz_data, owner_name):
 
 current_key_index = 0 # متغير تدوير المفاتيح
 # ============================================================
-# 🔄 محرك التلميحات الذكي بنظام التدوير الآلي (ياسر المطور)
+# 🔄 محرك التلميحات الذكي بنظام التدوير الآلي (النسخة المطورة)
 # ============================================================
-async def generate_smart_hint(answer_text, force_refresh=False):
+async def generate_smart_hint(answer_text, question_text="سؤال غير محدد", force_refresh=False):
     answer_text = str(answer_text).strip()
     
     # 1. فحص الذاكرة السحابية (Skip if force_refresh is True)
@@ -3567,26 +3567,24 @@ async def generate_smart_hint(answer_text, force_refresh=False):
             logging.error(f"Database Cache Error: {e}")
 
     # 2. جلب قائمة المفاتيح المتاحة للتدوير
-    # سنقوم بتجربة G_KEY_1 و G_KEY_2 و G_KEY_3 بالتوالي
     available_keys = ["G_KEY_1", "G_KEY_2", "G_KEY_3"]
     
-    # محاولة جلب المفتاح النشط حالياً لنبدأ به توفيراً للوقت
     try:
         active_res = supabase.table("system_settings").select("key_value").eq("key_name", "ACTIVE_GROQ_KEY").execute()
         if active_res.data:
             start_key = active_res.data[0]['key_value']
-            # إعادة ترتيب القائمة ليبدأ بالمفتاح الذي كان يعمل آخر مرة
             if start_key in available_keys:
                 available_keys.remove(start_key)
                 available_keys.insert(0, start_key)
-    except: pass
+    except: 
+        pass
 
     # 3. محرك التدوير (Rotation Loop)
     url = "https://api.groq.com/openai/v1/chat/completions"
     
     for key_alias in available_keys:
         try:
-            # جلب التوكن الفعلي للمفتاح الحالي في الحلقة
+            # جلب التوكن الفعلي للمفتاح الحالي
             token_res = supabase.table("system_settings").select("key_value").eq("key_name", key_alias).execute()
             active_token = token_res.data[0]['key_value'] if token_res.data else None
             
@@ -3594,35 +3592,35 @@ async def generate_smart_hint(answer_text, force_refresh=False):
                 continue
 
             headers = {"Authorization": f"Bearer {active_token}", "Content-Type": "application/json"}
+            
+            # بناء الطلب بذكاء لمنع التكرار
             payload = {
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {
                         "role": "system", 
-                        "content": (
-                            "أنت محترف في صياغة تلميحات الألغاز الصعبة. "
-                            "مهمتك إعطاء تلميح (لغز شعبي أو وصفي) يبتعد تماماً عن التعريف القاموسي. "
-                            "ممنوع استخدام كلمات من السؤال الأصلي، وممنوع ذكر الإجابة أو أجزاء منها."
-                        )
+                        "content": "أنت خبير ألغاز محترف. مهمتك إعطاء تلميح ذكي يصف الكلمة من زاوية بعيدة تماماً عن نص السؤال الأصلي. ممنوع ذكر الإجابة."
                     },
                     {
                         "role": "user", 
                         "content": (
-                            f"السؤال الأصلي: {question_text}\n"
-                            f"الإجابة المطلوبة: {answer_text}\n"
-                            "أعطني تلميحاً ذكياً ومسلياً لا يتجاوز 10 كلمات، يصف الإجابة من زاوية غير متوقعة."
+                            f"السؤال الأصلي: ({question_text})\n"
+                            f"الكلمة المستهدفة: ({answer_text})\n\n"
+                            "أعطني وصفاً قصيراً ومسلياً لا يتجاوز 10 كلمات، يلمح للكلمة بذكاء دون تكرار كلمات السؤال."
                         )
                     }
                 ],
-                "temperature": 0.85 # رفع الحرارة يزيد من الإبداع والابتعاد عن النمطية
+                "temperature": 0.8
             }
 
             async with httpx.AsyncClient() as client:
-                # ... كود الإرسال ...
-                pass
-                # الحالة (A): النجاح ✅
+                response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+                
                 if response.status_code == 200:
                     ai_hint = response.json()['choices'][0]['message']['content'].strip()
+                    # تنظيف النص
+                    ai_hint = ai_hint.replace('"', '').replace('«', '').replace('»', '')
+                    
                     final_hint = (
                         f" <b>〔 تـلـمـيـح ذكـي 〕</b> \n"
                         f"   <b>📜 الوصف:</b>\n"
@@ -3630,32 +3628,34 @@ async def generate_smart_hint(answer_text, force_refresh=False):
                         f"❃"
                     )
                     
-                    # تحديث المفتاح الناجح في الإعدادات ليكون هو الأساسي مستقبلاً
-                    supabase.table("system_settings").update({"key_value": key_alias}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
-                    
-                    # حفظ التلميح في الذاكرة السحابية
-                    supabase.table("hints").upsert({"word": answer_text, "hint": final_hint}).execute()
+                    # تحديث المفتاح الناجح وحفظ التلميح
+                    try:
+                        supabase.table("system_settings").update({"key_value": key_alias}).eq("key_name", "ACTIVE_GROQ_KEY").execute()
+                        supabase.table("hints").upsert({"word": answer_text, "hint": final_hint}).execute()
+                    except:
+                        pass
+                        
                     return final_hint
                 
-                # الحالة (B): فشل المفتاح الحالي ❌ (سيقوم بتجربة المفتاح التالي في القائمة)
                 else:
                     error_status = response.status_code
-                    # إرسال تنبيه للمطور عن المفتاح المعطل تحديداً
-                    alert_text = (
-                        f"⚠️ <b>تنبيه تعطل مفتاح!</b>\n"
-                        f"━━━━━━━━━━━━━━\n"
-                        f"📌 المفتاح المعطل: <code>{key_alias}</code>\n"
-                        f"🚫 كود الخطأ: <code>{error_status}</code>\n"
-                        f"🔄 الإجراء: <b>يتم الآن الانتقال للمفتاح التالي تلقائياً...</b>"
-                    )
-                    await bot.send_message(ADMIN_ID, alert_text, parse_mode="HTML")
-                    continue # العودة لبداية الحلقة وتجربة المفتاح التالي
+                    # إرسال تنبيه للمطور
+                    try:
+                        alert_text = (
+                            f"⚠️ <b>تنبيه تعطل مفتاح!</b>\n"
+                            f"📌 المفتاح: <code>{key_alias}</code>\n"
+                            f"🚫 الخطأ: <code>{error_status}</code>"
+                        )
+                        await bot.send_message(ADMIN_ID, alert_text, parse_mode="HTML")
+                    except:
+                        pass
+                    continue 
 
         except Exception as e:
             logging.error(f"Error rotating key {key_alias}: {e}")
             continue
 
-    # 4. تلميح الطوارئ (إذا فشلت جميع المفاتيح في التدوير)
+    # 4. تلميح الطوارئ (إذا فشلت جميع المحاولات)
     return (
         f"💡 <b>〔 تلميح بسيط 〕</b>\n"
         f"<b>• الحرف الأول:</b> ( {answer_text[0]} )\n"
@@ -3667,6 +3667,7 @@ async def delete_after(message, delay):
         await message.delete()
     except Exception: 
         pass
+# ==========================================
 # ==========================================
 # [2] المحرك الموحد (نسخة الإصلاح والتلميح الناري 🔥)
 # ==========================================
