@@ -404,7 +404,7 @@ def generate_14_digit_bank():
 # =========================================
 # تأكد أن الدالة تبدأ من بداية السطر تماماً (بدون مسافات جهة اليسار)
 # ==========================================
-async def sync_points_to_global_db(group_scores, winners_list=None, cat_name="عام", is_special=False):
+async def sync_points_to_global_db(group_scores=None, winners_list=None, cat_name="عام", is_special=False, quiz_id=None):
     """
     👑 محرك ياسر الملكي المتكامل 2026
     - المسابقة الخاصة: النقطة = إجابة كاملة | الرفع في special_wins
