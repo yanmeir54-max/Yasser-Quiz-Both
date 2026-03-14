@@ -3759,6 +3759,9 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         t_limit = int(quiz_data.get('time_limit', 15))
         h_msg = None 
         
+        # سحب نص السؤال هنا لاستخدامه في التلميح
+        current_q_text = quiz_data.get('question', 'سؤال غامض')
+
         while time.time() - start_time < t_limit:
             if not active_quizzes.get(chat_id) or not active_quizzes[chat_id]['active']:
                 break
@@ -3766,7 +3769,9 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             if quiz_data.get('smart_hint') and not active_quizzes[chat_id]['hint_sent']:
                 if (time.time() - start_time) >= (t_limit / 2):
                     try:
-                        hint_text = await generate_smart_hint(ans)
+                        # 🔥 التعديل الجوهري: نرسل الإجابة والسؤال معاً 🔥
+                        hint_text = await generate_smart_hint(answer_text=ans, question_text=current_q_text)
+                        
                         h_msg = await bot.send_message(chat_id, hint_text, parse_mode="HTML")
                         active_quizzes[chat_id]['hint_sent'] = True
                     except Exception as e:
@@ -3776,7 +3781,6 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
 
         if h_msg:
             asyncio.create_task(delete_after(h_msg, 0))
-
         # 5. إنهاء السؤال وحساب النقاط (التعديل الجوهري 🔥)
         if chat_id in active_quizzes:
             # نغلق السؤال أولاً لمنع استقبال إجابات متأخرة
