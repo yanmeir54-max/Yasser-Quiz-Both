@@ -3893,13 +3893,32 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         if str(cid) not in group_names_map:
             group_names_map[str(cid)] = f"جروب {cid}"
 
-    # --- [ ب ] منع الطلقة المزدوجة (القفل العالمي) ---
+    # --- [ ب ] نظام الفلترة الذكي (منع الطلقة المزدوجة) ---
+    # بدلاً من الإغلاق الكامل، سنستبعد المجموعات المشغولة فقط
+    
+    chats_to_broadcast = []
     for cid in all_chats:
-        if cid in active_broadcasts:
-            logging.warning(f"⚠️ مسابقة نشطة بالفعل في {cid}")
-            return
-    for cid in all_chats: active_broadcasts.add(cid)
+        # 1. فحص القفل البرمجي (Memory Lock)
+        is_in_memory = (cid in active_broadcasts)
+        
+        # 2. فحص الرادار المحلي (Active Quizzes)
+        is_active_local = (cid in active_quizzes and active_quizzes[cid].get('active'))
+        
+        if is_in_memory or is_active_local:
+            logging.warning(f"⚠️ تخطي المجموعة {cid}: مسابقة نشطة بالفعل.")
+            continue  # ننتقل للمجموعة التالية ولا نوقف الإذاعة
+            
+        chats_to_broadcast.append(cid)
+        active_broadcasts.add(cid) # حجز المجموعة فوراً
 
+    # إذا كانت كل المجموعات مشغولة
+    if not chats_to_broadcast:
+        logging.error("🚫 لا توجد مجموعات متاحة لبدء الإذاعة حالياً.")
+        return
+
+    # الآن نستخدم chats_to_broadcast في بقية الكود بدلاً من all_chats
+    for cid in chats_to_broadcast:
+        # ابدأ الإذاعة هنا...
     try:
         # --- [ ج ] جلب وتجهيز الأسئلة ---
         raw_cats = quiz_data.get('cats', [])
