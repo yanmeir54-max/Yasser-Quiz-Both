@@ -406,129 +406,139 @@ def generate_14_digit_bank():
 # ==========================================
 async def sync_points_to_global_db(group_scores=None, winners_list=None, cat_name="عام", is_special=False, quiz_id=None):
     """
-    👑 محرك ياسر الملكي المتكامل 2026
-    - المسابقة الخاصة: النقطة = إجابة كاملة | الرفع في special_wins
-    - المسابقة العامة: 10 نقاط = إجابة واحدة | الرفع في total_wins
-    - تحديث تلقائي للألقاب، التخصصات، والرتب التعليمية.
+    👑 محرك ياسر الملكي المتكامل 2026 - نسخة "الصبنة" الممنوعة 😂
+    - تدعم الجرد من السجل الرقمي (quiz_id) أو الذاكرة (group_scores)
+    - تعالج خطأ 'NoneType' و unexpected keyword argument
     """
-    
-    # 1. تحديد أبطال الجولة
-    winning_groups = winners_list if winners_list else []
-    if not winning_groups:
-        group_totals = {gid: sum(p.get('points', 0) for p in players.values()) 
-                        for gid, players in group_scores.items()}
-        if group_totals:
-            top_group_id = max(group_totals, key=group_totals.get)
-            winning_groups = [top_group_id]
+    try:
+        # 1️⃣ جلب البيانات من سجل الإجابات إذا توفر quiz_id (للمسابقات العامة/الإذاعة)
+        if quiz_id:
+            try:
+                res_log = supabase.table("answers_log").select("*").eq("quiz_id", quiz_id).execute()
+                if res_log.data:
+                    group_scores = {}
+                    for row in res_log.data:
+                        cid = row['chat_id']
+                        uid = str(row['user_id'])
+                        if cid not in group_scores: group_scores[cid] = {}
+                        if uid not in group_scores[cid]:
+                            group_scores[cid][uid] = {'name': row['user_name'], 'points': 0}
+                        group_scores[cid][uid]['points'] += row['points_earned']
+                    logging.info(f"📊 تم جلب حصاد {len(res_log.data)} إجابة من السجل الرقمي.")
+            except Exception as e:
+                logging.error(f"❌ خطأ في سحب بيانات اللوج: {e}")
 
-    # 2. تجميع حصاد اللاعبين من جميع المجموعات
-    final_tallies = {}
-    for cid, players in group_scores.items():
-        is_the_champion_group = (cid in winning_groups)
-        
-        for uid, p_data in players.items():
-            u_id = int(uid)
-            if u_id not in final_tallies:
-                final_tallies[u_id] = {
-                    "name": p_data.get('name', 'لاعب مجهول'), 
-                    "pts": 0, "ans_count": 0, "won_round": 0
-                }
-            
-            pts = p_data.get('points', 0)
-            final_tallies[u_id]["pts"] += pts
-            
-            # ✅ قاعدة الحساب: الخاصة (1:1) | العامة (10:1)
-            final_tallies[u_id]["ans_count"] += pts if is_special else (pts // 10)
-            
-            if is_the_champion_group:
-                final_tallies[u_id]["won_round"] = 1
+        # 2️⃣ تأمين المحرك من البيانات الفارغة
+        if not group_scores:
+            logging.warning("⚠️ لا توجد بيانات للترحيل (المخزن فارغ).")
+            return
 
-    # 3. المزامنة مع Supabase (التحديث الذكي)
-    for uid, data in final_tallies.items():
-        try:
-            res = supabase.table("users_global_profile").select("*").eq("user_id", uid).execute()
-            
-            # --- [ دوال النظام الذكي ] ---
-            def calculate_rank(total_ans):
-                if total_ans <= 50: return "🌱 عضو جديد"
-                elif total_ans <= 150: return "📚 طالب مجتهد"
-                elif total_ans <= 300: return "🎓 خريج متميز"
-                elif total_ans <= 600: return "📑 باحث علمي"
-                elif total_ans <= 1200: return "🔬 عالم فذ"
-                elif total_ans <= 2500: return "🏛️ بروفيسور"
-                elif total_ans <= 5000: return "👑 أسطورة زدني"
-                else: return "✨ سلطان المعرفة"
+        # 3️⃣ تحديد المجموعات الفائزة (لحساب الـ wins)
+        winning_groups = winners_list if winners_list else []
+        if not winning_groups:
+            group_totals = {gid: sum(p.get('points', 0) for p in players.values()) 
+                            for gid, players in group_scores.items()}
+            if group_totals:
+                top_group_id = max(group_totals, key=group_totals.get)
+                winning_groups = [top_group_id]
 
-            
-            def calculate_specialty(stats):
-                if not stats: return "هاوي"
-                top_cat = max(stats, key=stats.get)
-                score = stats[top_cat]
-                if score > 1000: return f"🏅 أسطورة {top_cat}"
-                elif score > 500: return f"👨‍🔬 عالم {top_cat}"
-                elif score > 100: return f"📜 خبير  {top_cat}"
-                else: return f"🔍 محب لـ {top_cat}"
+        # 4️⃣ تجميع حصاد اللاعبين النهائي
+        final_tallies = {}
+        for cid, players in group_scores.items():
+            is_the_champion_group = (cid in winning_groups)
+            for uid, p_data in players.items():
+                u_id = int(uid)
+                if u_id not in final_tallies:
+                    final_tallies[u_id] = {
+                        "name": p_data.get('name', 'لاعب مجهول'), 
+                        "pts": 0, "ans_count": 0, "won_round": 0
+                    }
+                pts = p_data.get('points', 0)
+                final_tallies[u_id]["pts"] += pts
+                # ✅ الحساب: الخاصة (النقطة=إجابة) | العامة (10 نقاط=إجابة)
+                final_tallies[u_id]["ans_count"] += pts if is_special else (pts // 10)
+                if is_the_champion_group:
+                    final_tallies[u_id]["won_round"] = 1
 
-            if res.data:
-                current = res.data[0]
-            
-                # تحديث إحصائيات الأقسام
-                current_stats = current.get('category_stats') or {}
-                current_stats[cat_name] = current_stats.get(cat_name, 0) + data['ans_count']
+        # 5️⃣ المزامنة العالمية مع بروفايلات المستخدمين
+        for uid, data in final_tallies.items():
+            try:
+                res = supabase.table("users_global_profile").select("*").eq("user_id", uid).execute()
                 
-                total_ans = (current.get('correct_answers_count') or 0) + data['ans_count']
-                titles = current.get('titles', [])
-                
-                # لمسة "نجم المسابقات" للفائز في الخاصة 🔥
-                if is_special and data['won_round'] > 0:
-                    if "🔥 : نجم المسابقات" not in titles:
-                        titles.append("🔥 : نجم المسابقات")
+                # --- [ الأنظمة الفرعية للرتب والألقاب ] ---
+                def calculate_rank(total_ans):
+                    if total_ans <= 50: return "🌱 عضو جديد"
+                    elif total_ans <= 150: return "📚 طالب مجتهد"
+                    elif total_ans <= 300: return "🎓 خريج متميز"
+                    elif total_ans <= 600: return "📑 باحث علمي"
+                    elif total_ans <= 1200: return "🔬 عالم فذ"
+                    elif total_ans <= 2500: return "🏛️ بروفيسور"
+                    elif total_ans <= 5000: return "👑 أسطورة زدني"
+                    else: return "✨ سلطان المعرفة"
 
-                # تجهيز حمولة البيانات
-                upd_payload = {
-                    "user_name": data['name'],
-                    "total_points": (current.get('total_points') or 0) + data['pts'],
-                    "wallet": (current.get('wallet') or 0) + data['pts'],
-                    "correct_answers_count": total_ans,
-                    "iq_score": min(150, (current.get('iq_score') or 50) + (data['ans_count'] // 5)),
-                    "educational_rank": calculate_rank(total_ans),
-                    "category_stats": current_stats,
-                    "specialty_title": calculate_specialty(current_stats),
-                    "titles": titles,
-                    "last_update": "now()"
-                }
+                def calculate_specialty(stats):
+                    if not stats: return "هاوي"
+                    top_cat = max(stats, key=stats.get)
+                    score = stats[top_cat]
+                    if score > 1000: return f"🏅 أسطورة {top_cat}"
+                    elif score > 500: return f"👨‍🔬 عالم {top_cat}"
+                    elif score > 100: return f"📜 خبير {top_cat}"
+                    else: return f"🔍 محب لـ {top_cat}"
 
-                # ✅ الرفع في العمود الصحيح بناءً على نوع المسابقة
-                if is_special:
-                    upd_payload["special_wins"] = (current.get('special_wins') or 0) + data['won_round']
+                if res.data:
+                    current = res.data[0]
+                    current_stats = current.get('category_stats') or {}
+                    current_stats[cat_name] = current_stats.get(cat_name, 0) + data['ans_count']
+                    
+                    total_ans = (current.get('correct_answers_count') or 0) + data['ans_count']
+                    titles = current.get('titles', [])
+                    
+                    if is_special and data['won_round'] > 0:
+                        if "🔥 : نجم المسابقات" not in titles:
+                            titles.append("🔥 : نجم المسابقات")
+
+                    upd_payload = {
+                        "user_name": data['name'],
+                        "total_points": (current.get('total_points') or 0) + data['pts'],
+                        "wallet": (current.get('wallet') or 0) + data['pts'],
+                        "correct_answers_count": total_ans,
+                        "iq_score": min(150, (current.get('iq_score') or 50) + (data['ans_count'] // 5)),
+                        "educational_rank": calculate_rank(total_ans),
+                        "category_stats": current_stats,
+                        "specialty_title": calculate_specialty(current_stats),
+                        "titles": titles,
+                        "last_update": "now()"
+                    }
+
+                    if is_special:
+                        upd_payload["special_wins"] = (current.get('special_wins') or 0) + data['won_round']
+                    else:
+                        upd_payload["total_wins"] = (current.get('total_wins') or 0) + data['won_round']
+                    
+                    supabase.table("users_global_profile").update(upd_payload).eq("user_id", uid).execute()
                 else:
-                    upd_payload["total_wins"] = (current.get('total_wins') or 0) + data['won_round']
+                    # لاعب جديد تماماً
+                    new_payload = {
+                        "user_id": uid, "user_name": data['name'],
+                        "total_points": data['pts'], "wallet": data['pts'],
+                        "correct_answers_count": data['ans_count'],
+                        "total_wins": data['won_round'] if not is_special else 0,
+                        "special_wins": data['won_round'] if is_special else 0,
+                        "iq_score": 60,
+                        "category_stats": {cat_name: data['ans_count']},
+                        "educational_rank": calculate_rank(data['ans_count']),
+                        "specialty_title": calculate_specialty({cat_name: data['ans_count']}),
+                        "titles": ["🌱 : عضو جديد"]
+                    }
+                    supabase.table("users_global_profile").insert(new_payload).execute()
                 
-                supabase.table("users_global_profile").update(upd_payload).eq("user_id", uid).execute()
-                logging.info(f"✅ تم تحديث بروفايل: {data['name']}")
+                logging.info(f"✅ تم ترحيل بيانات البطل: {data['name']}")
+            except Exception as e:
+                logging.error(f"❌ خطأ في تحديث بروفايل {uid}: {e}")
 
-            else:
-                # 🆕 إنشاء لاعب جديد (الهوية الملكية)
-                new_payload = {
-                    "user_id": uid, "user_name": data['name'],
-                    "bank_account": generate_14_digit_bank(),
-                    "total_points": data['pts'], "wallet": data['pts'],
-                    "correct_answers_count": data['ans_count'],
-                    "total_wins": data['won_round'] if not is_special else 0,
-                    "special_wins": data['won_round'] if is_special else 0,
-                    "iq_score": 60,
-                    "category_stats": {cat_name: data['ans_count']},
-                    "educational_rank": calculate_rank(data['ans_count']),
-                    "specialty_title": calculate_specialty({cat_name: data['ans_count']}),
-                    "titles": ["🌱 : عضو جديد"], "inventory": [],
-                    "cards_inventory": {"time": 1, "full": 1, "shield": 1, "reveal": 1, "double": 1, "letter": 1}
-                }
-                supabase.table("users_global_profile").insert(new_payload).execute()
-                logging.info(f"🆕 تسجيل عضو عالمي جديد: {data['name']}")
-
-        except Exception as e:
-            logging.error(f"❌ فشل ترحيل بيانات {uid}: {e}")
-            
+    except Exception as fatal_e:
+        logging.error(f"🚨 خطأ قاتل في محرك المزامنة: {fatal_e}")
+                    
             
 # ============================================================
 # دالة تحديث سجلات المجموعة (الذكاء الجماعي)
