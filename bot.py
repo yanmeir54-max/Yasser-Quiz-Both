@@ -4967,7 +4967,6 @@ from aiohttp import web
 # دالة الرد على "نغزة" المواقع الخارجية مثل Cron-job
 async def handle_ping(request):
     return web.Response(text="Bot is Active and Running! 🚀")
-
 if __name__ == '__main__':
     # 1. إعداد سيرفر ويب صغير في الخلفية (Keep-Alive)
     app = web.Application()
@@ -4985,14 +4984,11 @@ if __name__ == '__main__':
     loop.create_task(site.start())
     print(f"✅ Keep-alive server started on port {port}")
 
-    # 🔥 3. تشغيل "المنظف الآلي" في الخلفية (الإضافة الجديدة)
-    # سيقوم هذا المنظف بفحص سوبابيس كل دقيقة وحذف البيانات الخاملة
-    loop.create_task(auto_database_cleaner())
-    print("🧹 Auto-database cleaner is now active!")
+    # تم حذف المنظف من هنا لضمان عدم توقف البوت 🚀
 
     # 4. إعدادات السجلات والتشغيل النهائي للبوت
     logging.basicConfig(level=logging.INFO)
     
-    # بدء استقبال الرسائل (Polling) مع تخطي التحديثات القديمة
+    # بدء استقبال الرسائل (Polling)
     print("🤖 Bot is now polling...")
     executor.start_polling(dp, skip_updates=True)
