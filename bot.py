@@ -63,29 +63,16 @@ answered_users_global = {}
    # ==========================================
 # 🧹 دالة المنظف الآلي (تحذف البيانات بعد دقيقة واحدة)
 # ==========================================
-async def auto_database_cleaner():
-    """تقوم بحذف المسابقات والسجلات التي مر عليها دقيقة واحدة من سوبابيس"""
+# كود تنظيف آمن (اختياري)
+async def safe_database_cleaner():
     while True:
         try:
-            # حساب الوقت (الآن - دقيقة واحدة) بصيغة سوبابيس (UTC)
-            cutoff_time = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
-
-            # حذف من الجدول الأساسي (سيحذف السجلات الأخرى تلقائياً بفضل الـ CASCADE)
-            # تم استخدام .delete() مع شرط التوقيت
-            response = supabase.table("active_quizzes") \
-                .delete() \
-                .lt("created_at", cutoff_time) \
-                .execute()
-
-            if response.data:
-                logging.info(f"🧹 تم تنظيف {len(response.data)} مسابقات خاملة وسجلاتها بنجاح.")
-        
-        except Exception as e:
-            logging.error(f"❌ خطأ في المنظف الآلي: {e}")
-        
-        # الفحص كل 60 ثانية
-        await asyncio.sleep(60)
-    
+            # حذف فقط المسابقات اللي مر عليها ساعة كاملة (60 دقيقة)
+            # لأن مستحيل مسابقة تظل ساعة كاملة شغالة
+            cutoff_time = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+            supabase.table("active_quizzes").delete().lt("created_at", cutoff_time).execute()
+        except: pass
+        await asyncio.sleep(3600) # يفحص كل ساعة مرة واحدة فقط
 # ==========================================
 # 4. محركات العرض والقوالب (Display Engines) - النسخة المصلحة
 # ==========================================
