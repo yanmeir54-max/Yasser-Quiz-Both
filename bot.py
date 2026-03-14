@@ -3597,15 +3597,29 @@ async def generate_smart_hint(answer_text, force_refresh=False):
             payload = {
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
-                    {"role": "system", "content": "أنت خبير ألغاز محترف. صف الكلمة بذكاء وبدون ذكرها إطلاقاً."},
-                    {"role": "user", "content": f"الكلمة: ({answer_text}). وصف قصير و مسلي دقيق جداً باللغة العربية لا يتجاوز 10 كلمات."}
+                    {
+                        "role": "system", 
+                        "content": (
+                            "أنت محترف في صياغة تلميحات الألغاز الصعبة. "
+                            "مهمتك إعطاء تلميح (لغز شعبي أو وصفي) يبتعد تماماً عن التعريف القاموسي. "
+                            "ممنوع استخدام كلمات من السؤال الأصلي، وممنوع ذكر الإجابة أو أجزاء منها."
+                        )
+                    },
+                    {
+                        "role": "user", 
+                        "content": (
+                            f"السؤال الأصلي: {question_text}\n"
+                            f"الإجابة المطلوبة: {answer_text}\n"
+                            "أعطني تلميحاً ذكياً ومسلياً لا يتجاوز 10 كلمات، يصف الإجابة من زاوية غير متوقعة."
+                        )
+                    }
                 ],
-                "temperature": 0.7
+                "temperature": 0.85 # رفع الحرارة يزيد من الإبداع والابتعاد عن النمطية
             }
 
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=payload, timeout=10.0)
-                
+                # ... كود الإرسال ...
+                pass
                 # الحالة (A): النجاح ✅
                 if response.status_code == 200:
                     ai_hint = response.json()['choices'][0]['message']['content'].strip()
