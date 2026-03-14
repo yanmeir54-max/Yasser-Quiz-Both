@@ -4173,6 +4173,9 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
 
     except Exception as e:
         logging.error(f"🚨 Global Engine Fatal Error: {e}")
+    finally:
+        # 🔓 فتح القفل للسماح ببدء إذاعة جديدة
+        for cid in all_chats: active_broadcasts.discard(cid)
 # =======================================
 # --- [ بداية الدالة من العمود 0 لضمان عدم وجود SyntaxError ] ---
 import re
