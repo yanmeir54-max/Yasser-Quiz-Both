@@ -4111,7 +4111,7 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                 await asyncio.sleep(2)
 
         
-        # 8️⃣ النتائج النهائية والتنظيف الرقمي
+        # 8️⃣ النتائج النهائية والتنظيف الرقمي المبرد ❄️
         for cid in all_chats:
             try: 
                 # أ. إرسال لوحة النتائج النهائية للمجموعة
@@ -4121,52 +4121,56 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                     total_q=total_q, 
                     group_names=group_names_map
                 )
+                await asyncio.sleep(0.5) # نفس بسيط للبوت بين المجموعات
             except Exception as e: 
-                logging.error(f"Error in final results: {e}")
+                logging.error(f"Error in final results for {cid}: {e}")
             
-            # ب. تنظيف رسائل الأسئلة والنتائج المؤقتة (Telegram)
-            for mid in messages_to_delete.get(cid, []):
-                try: await bot.delete_message(cid, mid)
-                except: pass
-
-            for r_mid in results_to_delete.get(cid, []):
-                try: await bot.delete_message(cid, r_mid)
-                except: pass
+            # ب. تنظيف رسائل الأسئلة والنتائج المؤقتة (مع نظام حماية من الـ Flood)
+            all_mids = messages_to_delete.get(cid, []) + results_to_delete.get(cid, [])
+            for i, mid in enumerate(all_mids):
+                try: 
+                    await bot.delete_message(cid, mid)
+                    # كل 5 رسائل نحذفها، ننتظر ثانية عشان تلجرام ما يزعل
+                    if i % 5 == 0:
+                        await asyncio.sleep(1)
+                except: 
+                    pass
        
         # 🚀 [ الخطوة الجوهرية: ترحيل النقاط من السجل الرقمي ] 🚀
         try:
             if current_quiz_db_id:
-                # 1. جلب "الحصاد الدقيق" من سجل الإجابات بدلاً من الذاكرة
+                # 1. جلب "الحصاد الدقيق" من سجل الإجابات
                 log_res = supabase.table("answers_log").select("*").eq("quiz_id", current_quiz_db_id).execute()
                 
                 if log_res.data:
-                    # 2. تحديث إحصائيات المجموعات بناءً على السجل الحقيقي
-                    # (يمكنك استخدام group_scores هنا فقط لمعرفة من شارك، لكن النقاط تؤخذ من اللوج)
+                    # 2. تحديث إحصائيات المجموعات
                     for cid in all_chats:
-                        # جلب عدد المبدعين الحقيقيين من اللوج لهذه المجموعة
                         members_in_log = len(set([r['user_id'] for r in log_res.data if r['chat_id'] == cid]))
-                        supabase.table("groups_global_stats").update({
-                            "members_count": members_in_log
-                        }).eq("group_id", cid).execute()
+                        if members_in_log > 0:
+                            supabase.table("groups_global_stats").update({
+                                "members_count": members_in_log
+                            }).eq("group_id", cid).execute()
 
-                    # 3. المزامنة العالمية (نمرر المعرف ليقوم المحرك بالجرد من اللوج)
-                    # ملاحظة: سنعدل الدالة لتقبل quiz_id وتجلب بياناتها من هناك
-                    await sync_points_to_global_db(quiz_id=current_quiz_db_id, cat_name=cat_name)
+                    # 3. المزامنة العالمية (تعديل الاستدعاء ليكون آمناً)
+                    # لاحظ أرسلنا group_scores={} لمنع خطأ الـ NoneType داخل الدالة
+                    await sync_points_to_global_db(
+                        group_scores={}, 
+                        quiz_id=current_quiz_db_id, 
+                        cat_name=cat_name
+                    )
                     logging.info("✅ تم الجرد والترحيل من سجل الإجابات بنجاح.")
 
                 # 🔥 [ التشطيب النهائي: تفريغ سوبابيس ] 🔥
                 # نحذف "الأب" وبسبب CASCADE يختفي اللوج والمشاركين فوراً
+                await asyncio.sleep(2) # انتظار بسيط للتأكد من انتهاء كل العمليات
                 supabase.table("active_quizzes").delete().eq("id", current_quiz_db_id).execute()
                 logging.info(f"🧹 تم تطهير النظام بالكامل للمسابقة {current_quiz_db_id}")
+        
         except Exception as sync_err:
             logging.error(f"🚨 خطأ أثناء الترحيل من السجل أو التنظيف: {sync_err}")
 
     except Exception as e:
         logging.error(f"🚨 Global Engine Fatal Error: {e}")
-    finally:
-        # 🔓 فتح القفل للسماح ببدء إذاعة جديدة
-        for cid in all_chats: active_broadcasts.discard(cid)
-        
 # =======================================
 # --- [ بداية الدالة من العمود 0 لضمان عدم وجود SyntaxError ] ---
 import re
