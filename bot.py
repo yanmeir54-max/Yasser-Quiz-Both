@@ -295,39 +295,55 @@ async def send_broadcast_final_results(chat_id, scores, total_q, group_names=Non
         logging.error(f"❌ : خطأ في الإذاعة : {e}")
         
 # ==========================================
-# ==========================================
 async def send_creative_results2(chat_id, correct_ans, winners, overall_scores):
-    """تصميم ياسر المطور: دمج الفائزين والترتيب في رسالة واحدة"""
-    msg =  "  ━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"✅ الإجابة الصحيحة: <b>{correct_ans}</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━━\n\n"
+    """تصميم ياسر المطور: لوحة فنية تدمج الفرحة بالفوز وهيبة الترتيب"""
     
+    # زخرفة رأس الرسالة
+    msg =  "<b>╭───〔 🏁 نـهـايـة الـجـولـة 〕───╼</b>\n"
+    msg += f"<b>│ ✅ الإجـابـة:</b> <code>{correct_ans}</code>\n"
+    msg += "<b>╰─────────────────────╼</b>\n\n"
+    
+    # قسم المتفوقين في السؤال الحالي
     if winners:
-        msg += "━ المتفوقون ✅ ━\n"
+        msg += "<b>⚡️〔 الـمـتـفـوقـون فـي الـسـؤال 〕⚡️</b>\n"
+        msg += "<b>┌───────────────────╼</b>\n"
         for i, w in enumerate(winners, 1):
-            msg += f"{i}- {w['name']} (كسبت 1 نقطة)\n"
+            # استخدام إيموجي النجمة للمتميزين
+            msg += f"<b>│ {i} ↤</b> {w['name']} <b>+1 🎖</b>\n"
+        msg += "<b>└───────────────────╼</b>\n"
     else:
-        msg += "❌ لم ينجح أحد في الإجابة على هذا السؤال\n"
+        msg += "<b>🛑 ↤ لم ينجح أحد في التحدي هذه المرة!</b>\n"
+        msg += "<b>────────────────────</b>\n"
     
+    # قسم لوحة الصدارة (الترتيب العام)
     leaderboard = sorted(overall_scores.values(), key=lambda x: x['points'], reverse=True)
-    msg += "\n━ 🏆 الترتيب  ━\n"
-    medals = ["🥇", "🥈", "🥉"]
-    for i, player in enumerate(leaderboard[:3]):
-        medal = medals[i] if i < 3 else "👤"
-        msg += f"{medal} {player['name']} — {player['points']}\n"
+    msg += "\n<b>🏆〔 لـوحـة الـصـدارة الـعـامـة 〕🏆</b>\n"
+    msg += "<b>┎───────────────────╼</b>\n"
     
-    # --- [ نهاية قالب الإجابة - المحرك الخاص ] ---
+    medals = ["🥇", "🥈", "🥉"]
+    for i, player in enumerate(leaderboard[:5]): # رفعنا العرض لـ 5 لزيادة الحماس
+        if i < 3:
+            medal = medals[i]
+            # تنسيق خاص للثلاثة الأوائل (bold)
+            msg += f"<b>┃ {medal} ↤ {player['name']} — ⦗ {player['points']} ⦘</b>\n"
+        else:
+            # البقية بتنسيق أنيق وبسيط
+            msg += f"<b>┃ 👤 ↤ {player['name']} — ⦗ {player['points']} ⦘</b>\n"
+            
+    msg += "<b>┖───────────────────╼</b>\n"
+    msg += "<b>✨ تـابـع الـتـألق.. الـقـادم أجـمـل! ✨</b>"
+
+    # --- [ الإرسال والمعالجة ] ---
     try:
-        # كلمة return هنا هي المحرك الأساسي لعملية الحذف لاحقاً
         return await bot.send_message(chat_id, msg, parse_mode="HTML")
     
     except Exception as e:
         import logging
-        logging.error(f"⚠️ HTML Error in Private Results: {e}")
-        # تنظيف النص من التاغات في حال وجود خطأ في التنسيق لضمان الإرسال
-        clean_msg = msg.replace("<b>","").replace("</b>","").replace("<code>","").replace("</code>","")
+        logging.error(f"⚠️ HTML Error in Creative Results: {e}")
+        # في حال حدوث خطأ، نقوم بتنظيف النص وإرساله خام
+        import re
+        clean_msg = re.sub('<[^<]+?>', '', msg)
         return await bot.send_message(chat_id, clean_msg)
-        
 async def send_final_results2(chat_id, overall_scores, total_q):
     """
     🥇 تصميم ياسر الملكي - نسخة المسابقات الخاصة V3
