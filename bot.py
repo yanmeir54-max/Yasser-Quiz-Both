@@ -1272,35 +1272,35 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         await asyncio.sleep(5)
         await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 🚀 [ الخطوة الجوهرية 6: تسجيل المشاركين فقط ] 🚀
+        # 🚀 [ الخطوة الجوهرية 6: تصفية المجموعات والانطلاق ] 🚀
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
-        
+
         if final_groups:
-            # تحديث الحالة البصرية للمجموعات المتبقية
-            launch_tasks = [bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") for cid, mid in group_msgs.items() if cid in final_groups]
+            # 1. تحديث الحالة البصرية للمجموعات المتبقية قبل بدء المحرك
+            launch_tasks = [
+                bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") 
+                for cid, mid in group_msgs.items() if cid in final_groups
+            ]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             try:
-                # تسجيل المشاركين في جدول quiz_participants لربطهم بالـ quiz_id الموجود مسبقاً
-                participant_data = [{"quiz_id": quiz_id, "chat_id": cid} for cid in final_groups]
-                
-                # تنفيذ الإدراج الجماعي (بدون سجل رئيسي جديد لمنع التكرار)
-                supabase.table("quiz_participants").insert(participant_data).execute()
+                # 💡 ملاحظة تقنية: تم نقل عملية التسجيل في 'quiz_participants' إلى داخل المحرك
+                # لضمان وجود 'current_quiz_db_id' وتجنب خطأ القيد (Constraint Error)
 
-                # ج. استدعاء المحرك العالمي لبدء بث الأسئلة
+                # ج. استدعاء المحرك العالمي لبدء البث الموحد
+                # نمرر final_groups ليعرف المحرك من هي المجموعات التي أكدت المشاركة
                 await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", quiz_id)
 
-            except Exception as db_err:
-                logging.error(f"❌ خطأ في تسجيل المشاركين: {db_err}")
-                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء ربط المجموعات بالمسابقة: {db_err}")
-        
-        # 7. التنظيف النهائي لرسائل الإعلان
-        for cid, mid in group_msgs.items():
-            try: await bot.delete_message(cid, mid)
-            except: pass
+            except Exception as e:
+                logging.error(f"🚨 Error starting engine: {e}")
+                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
 
-    except Exception as e:
-        logging.error(f"🚨 General Broadcast Error: {e}")
+        # 7. التنظيف النهائي لرسائل الإعلان (سواء انطلقت أو أُلغيت)
+        for cid, mid in group_msgs.items():
+            try: 
+                await bot.delete_message(cid, mid)
+            except: 
+                pass
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 
