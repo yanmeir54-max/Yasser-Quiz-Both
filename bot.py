@@ -213,6 +213,47 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
         
         # و- إرسال السؤال (نص + أزرار)
         return await send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup)
+# --- [ دالة مساعدة لدمج النص الفخم مع الأزرار الذكية ] ---
+async def send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup):
+    """
+    هذه الدالة هي "المُسلم": تأخذ التصميم النصي وتضيف له الأزرار وترسلهم.
+    """
+    # 1. استخراج الإعدادات والتنسيقات (نفس اللي في دالتك الأولى تماماً)
+    is_pub = settings.get('is_public', False) 
+    q_scope = "إذاعة عامة 🌐" if is_pub else "مسابقة داخلية 📍"
+    q_mode = settings.get('mode', 'السرعة ⚡')
+    is_hint_on = settings.get('smart_hint', False)
+    normal_hint = settings.get('normal_hint', "")
+    q_text = q_data.get('question_content') or q_data.get('question_text') or "⚠️ نص السؤال مفقود!"
+
+    # 2. بناء النص (التصميم اللي تحبه)
+    text = (
+        f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️\n"
+        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n"
+        f"📌 **السؤال:** « {current_num} » من « {total_num} »\n"
+        f"📂 **القسم:** `{settings.get('cat_name', 'عام')}`\n"
+        f"📡 **النطاق:** **{q_scope}**\n"
+        f"⏳ **المهلة:** {settings['time_limit']} ثانية\n"
+        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n\n"
+        f"❓ **السؤال:**\n**{q_text}**\n"
+    )
+    
+    if is_hint_on and normal_hint:
+        text += f"\n💡 **تلميح الإجابة:** {normal_hint}"
+
+    # 3. الإرسال الفعلي (نص السؤال + الأزرار)
+    try:
+        return await bot.send_message(
+            chat_id, 
+            text, 
+            reply_markup=markup,  # هنا يتم إضافة الأزرار التي ولدناها
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        # حماية في حال وجود رموز ماركداون خاطئة
+        clean_text = text.replace("*", "").replace("`", "").replace("_", "")
+        return await bot.send_message(chat_id, clean_text, reply_markup=markup)
+        
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
