@@ -3939,15 +3939,20 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             # تنسيق التلميح العادي: عدد الكلمات + أول حرف
             normal_hint_str = f"مكونة من ({count_words}) كلمات، تبدأ بـ ( {ans_str[0]} )"
 
-        # 3. إرسال قالب السؤال (مع الصيد)
-        q_msg = await send_quiz_question(chat_id, q, i+1, len(questions), {
+        # --- [ تعديل المحرك ليدعم نمط "الكل" والأنماط الثلاثة ] ---
+        
+        # 3. إرسال قالب السؤال (عبر الموزع الذكي) 🔥
+        # هنا استبدلنا الدالة القديمة بالدالة الموحدة "المايسترو"
+        q_msg = await send_quiz_master(chat_id, q, i+1, len(questions), {
             'owner_name': owner_name, 
             'mode': quiz_data['mode'], 
             'time_limit': quiz_data['time_limit'], 
             'cat_name': cat_name,
+            'quiz_style': quiz_data.get('quiz_style', 'اختيارات 📊'), # نمرر النمط المختار
             'smart_hint': quiz_data.get('smart_hint'),
-            'normal_hint': normal_hint_str # تمرير التلميح البنيوي
+            'normal_hint': normal_hint_str 
         })
+
         if isinstance(q_msg, types.Message):
             questions_to_delete.append(q_msg.message_id)
         
