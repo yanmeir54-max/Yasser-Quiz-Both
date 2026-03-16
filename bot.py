@@ -3973,7 +3973,8 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         
         # 3. إرسال قالب السؤال (عبر الموزع الذكي) 🔥
         # هنا استبدلنا الدالة القديمة بالدالة الموحدة "المايسترو"
-        q_msg = await send_quiz_master(chat_id, q, i+1, len(questions), {
+        # السطر الجديد (المصحح)
+        q_msg = await send_quiz_master(chat_id, q, i+1, len(questions), settings, questions), {
             'owner_name': owner_name, 
             'mode': quiz_data['mode'], 
             'time_limit': quiz_data['time_limit'], 
