@@ -3501,10 +3501,6 @@ async def handle_secure_actions(c: types.CallbackQuery, state: FSMContext):
             await c.message.edit_text(text, reply_markup=kb)
             return
 
-    except Exception as e:
-        print(f"Error in secure actions: {e}")
-        await c.answer("⚠️ حدث خطأ فني.")
-        
         # 3️⃣ التبديلات (Toggles) والأزرار المباشرة (تحديث 2026)
         # أضفنا 'set_t_' للوقت و 'toggle_style_' للنمط الجديد
         elif any(c.data.startswith(x) for x in ['toggle_hint_', 'toggle_speed_', 'toggle_scope_', 'toggle_style_', 'set_c_', 'set_t_']):
