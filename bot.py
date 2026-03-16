@@ -1272,35 +1272,49 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         await asyncio.sleep(5)
         await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 🚀 [ الخطوة الجوهرية 6: تصفية المجموعات والانطلاق ] 🚀
+        # 🚀 [ الخطوة الجوهرية 6: التصفية وتسجيل البيانات ] 🚀
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
-
+        
         if final_groups:
-            # 1. تحديث الحالة البصرية للمجموعات المتبقية قبل بدء المحرك
-            launch_tasks = [
-                bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") 
-                for cid, mid in group_msgs.items() if cid in final_groups
-            ]
+            # تحديث الحالة البصرية قبل المحرك مباشرة
+            launch_tasks = [bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") for cid, mid in group_msgs.items() if cid in final_groups]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             try:
-                # 💡 ملاحظة تقنية: تم نقل عملية التسجيل في 'quiz_participants' إلى داخل المحرك
-                # لضمان وجود 'current_quiz_db_id' وتجنب خطأ القيد (Constraint Error)
+                # أ. إنشاء السجل الرقمي (مرة واحدة فقط) مع إضافة القسم
+                active_res = supabase.table("active_quizzes").insert({
+                    "quiz_name": quiz_name,
+                    "category_name": cat_info,  # 🔥 إضافة القسم هنا ليظهر في settings['cat_name']
+                    "created_by": owner_id, 
+                    "is_global": True,
+                    "is_active": True,
+                    "total_questions": q_count
+                    # تم حذف participants_ids من هنا لأننا سنعتمد على جدول quiz_participants
+                }).execute()
+                
+                if not active_res.data:
+                    raise Exception("فشل إنشاء سجل المسابقة الرئيسي")
 
-                # ج. استدعاء المحرك العالمي لبدء البث الموحد
-                # نمرر final_groups ليعرف المحرك من هي المجموعات التي أكدت المشاركة
-                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", quiz_id)
+                new_quiz_db_id = active_res.data[0]['id']
 
-            except Exception as e:
-                logging.error(f"🚨 Error starting engine: {e}")
-                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
+                # ب. تسجيل المشاركين (الحبل السري) - تسجيل جماعي واحد
+                participant_data = [{"quiz_id": new_quiz_db_id, "chat_id": cid} for cid in final_groups]
+                supabase.table("quiz_participants").insert(participant_data).execute()
 
-        # 7. التنظيف النهائي لرسائل الإعلان (سواء انطلقت أو أُلغيت)
+                # ج. استدعاء المحرك العالمي لبدء بث الأسئلة
+                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", new_quiz_db_id)
+
+            except Exception as db_err:
+                logging.error(f"❌ خطأ قاعدة البيانات: {db_err}")
+                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء التسجيل الرقمي: {db_err}")
+        
+        # 7. التنظيف النهائي لرسائل الإعلان
         for cid, mid in group_msgs.items():
-            try: 
-                await bot.delete_message(cid, mid)
-            except: 
-                pass
+            try: await bot.delete_message(cid, mid)
+            except: pass
+
+    except Exception as e:
+        logging.error(f"🚨 General Broadcast Error: {e}")
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 
