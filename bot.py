@@ -156,89 +156,63 @@ def build_smart_buttons(quiz, user_id=None):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==========================================
-# 5. دالة "الكل" والموزع الذكي (The Master Engine) - النسخة المصلحة
+# 5. دالة المايسترو (التي تربط النص بالأزرار وتولد الخيارات)
 # ==========================================
-async def send_quiz_master(chat_id, q_data, current_num, total_num, settings):
+async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
     """
-    الدالة الرئيسية التي تقرر شكل السؤال (مباشر، اختيارات، أو تبادل)
-    تضمن سحب الخيارات بذكاء وتمنع ظهور القوالب الناقصة.
+    هذه الدالة هي التي تقرر: هل نرسل سؤالاً مباشراً أم سؤال خيارات؟
     """
     style = settings.get('quiz_style', 'اختيارات 📊')
     
-    # 1. تحديد النمط الفعلي (منطق التبديل لنمط الكل)
+    # 1️⃣ تحديد النمط (تبديل عشوائي إذا اختار المنظم "الكل")
     if style == "الكل 📋":
         actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
     else:
         actual_mode = style
 
-    # 2. جلب الخيارات بذكاء (فحص المسميات المختلفة في سوبابيس)
-    # ملاحظة: جربنا options و choices لضمان جلب البيانات مهما كان مسمى العمود
-    raw_options = q_data.get('options') or q_data.get('choices') or []
-    
-    # التأكد من الإجابة الصحيحة
-    correct_ans = q_data.get('correct_answer') or q_data.get('answer_text') or ""
+    # 2️⃣ استخراج الإجابة الصحيحة للسؤال الحالي (من عمودك في سوبابيس)
+    correct_ans = str(q_data.get('answer_text') or q_data.get('correct_answer') or "").strip()
 
-    # --- [ صمام الأمان الذكي ] ---
-    # إذا كان النمط "اختيارات" لكن الخيارات فارغة في قاعدة البيانات
-    # نحول السؤال تلقائياً لنمط "مباشرة" لكي لا يظهر السؤال ناقصاً للجمهور
-    if actual_mode == "اختيارات 📊" and not raw_options:
-        actual_mode = "مباشرة ⚡"
-
-    # --- [ مرحلة التنفيذ ] ---
-
-    # 1️⃣ استدعاء "قالب المباشر" (نص فقط)
+    # ------------------------------------------
+    # الحالة الأولى: إذا كان النمط "مباشرة ⚡"
+    # ------------------------------------------
     if actual_mode == "مباشرة ⚡":
+        # ننادي دالة "قالب السؤال" التي أرسلتها لي أولاً (ترسل نص فقط)
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # 2️⃣ استدعاء "قالب الاختيارات" (نص + أزرار)
+    # ------------------------------------------
+    # الحالة الثانية: إذا كان النمط "اختيارات 📊"
+    # ------------------------------------------
     else:
+        # هنا السحر! سنصنع خيارات من لا شيء:
+        
+        # أ- نجمع إجابات من الأسئلة الأخرى لتكون خيارات خاطئة (تمويه)
+        other_answers = list(set([
+            str(q.get('answer_text') or q.get('correct_answer') or "").strip() 
+            for q in all_questions_list 
+            if str(q.get('answer_text') or q.get('correct_answer')) != correct_ans
+        ]))
+        
+        # ب- نختار 3 إجابات خاطئة عشوائية
+        wrong_picks = random.sample(other_answers, min(3, len(other_answers)))
+        
+        # ج- ندمج الصحيحة مع الخاطئة ونخلطهم
+        final_options = wrong_picks + [correct_ans]
+        random.shuffle(final_options) # لكي لا تكون الإجابة دائماً في نفس المكان
+
+        # د- نجهز "قاموس" البيانات لدالة الأزرار
         quiz_init = {
-            'options': raw_options,
-            'voter_list': {}, # جديد تماماً
-            'votes_results': {str(i): 0 for i in range(len(raw_options))},
+            'options': final_options, # الخيارات التي ولدناها الآن
+            'voter_list': {}, 
+            'votes_results': {str(i): 0 for i in range(len(final_options))},
             'current_answer': correct_ans
         }
         
-        # بناء الأزرار (ستظهر الآن الأزرار الزرقاء 🔹 فوق زر البحث)
+        # هـ- بناء الأزرار (رسم الأزرار بناءً على الخيارات الجديدة)
         markup = build_smart_buttons(quiz_init)
         
-        # إرسال السؤال مع الأزرار التفاعلية
+        # و- إرسال السؤال (نص + أزرار)
         return await send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup)
-
-# --- [ دالة مساعدة لدمج النص مع الأزرار ] ---
-async def send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup):
-    """
-    هذه الدالة تعيد استخدام نفس تصميم النص الفخم ولكن تضيف له الأزرار التفاعلية
-    """
-    is_pub = settings.get('is_public', False) 
-    q_scope = "إذاعة عامة 🌐" if is_pub else "مسابقة داخلية 📍"
-    q_mode = settings.get('mode', 'السرعة ⚡')
-    is_hint_on = settings.get('smart_hint', False)
-    normal_hint = settings.get('normal_hint', "")
-
-    q_text = q_data.get('question_content') or q_data.get('question_text') or "⚠️ نص السؤال مفقود!"
-    
-    text = (
-        f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️\n"
-        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n"
-        f"📌 **السؤال:** « {current_num} » من « {total_num} »\n"
-        f"📂 **القسم:** `{settings.get('cat_name', 'عام')}`\n"
-        f"📡 **النطاق:** **{q_scope}**\n"
-        f"⏳ **المهلة:** {settings['time_limit']} ثانية\n"
-        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n\n"
-        f"❓ **السؤال:**\n**{q_text}**\n"
-    )
-    
-    if is_hint_on and normal_hint:
-        text += f"\n💡 **تلميح الإجابة:** {normal_hint}"
-
-    try:
-        return await bot.send_message(chat_id, text, reply_markup=markup, parse_mode='Markdown')
-    except Exception as e:
-        # حماية في حال وجود رموز خاصة تمنع إرسال الماركدوان
-        clean_text = text.replace("*", "").replace("`", "").replace("_", "")
-        return await bot.send_message(chat_id, clean_text, reply_markup=markup)
-        
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
