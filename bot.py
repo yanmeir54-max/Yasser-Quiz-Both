@@ -73,6 +73,7 @@ async def safe_database_cleaner():
             supabase.table("active_quizzes").delete().lt("created_at", cutoff_time).execute()
         except: pass
         await asyncio.sleep(3600) # يفحص كل ساعة مرة واحدة فقط
+
 # ==========================================
 # 4. محركات العرض والقوالب (Display Engines) - النسخة المصلحة
 # ==========================================
@@ -155,47 +156,60 @@ def build_smart_buttons(quiz, user_id=None):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==========================================
-# 5. دالة "الكل" والموزع الذكي (The Master Engine)
+# 5. دالة "الكل" والموزع الذكي (The Master Engine) - النسخة المصلحة
 # ==========================================
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings):
     """
     الدالة الرئيسية التي تقرر شكل السؤال (مباشر، اختيارات، أو تبادل)
+    تضمن سحب الخيارات بذكاء وتمنع ظهور القوالب الناقصة.
     """
     style = settings.get('quiz_style', 'اختيارات 📊')
     
-    # --- [ منطق اختيار القالب ] ---
+    # 1. تحديد النمط الفعلي (منطق التبديل لنمط الكل)
     if style == "الكل 📋":
-        # القرعة الذكية: تختار مرة مباشر ومرة اختيارات
         actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
     else:
         actual_mode = style
 
-    # 1️⃣ استدعاء "قالب المباشر" (نص فقط - دالتك رقم 3)
+    # 2. جلب الخيارات بذكاء (فحص المسميات المختلفة في سوبابيس)
+    # ملاحظة: جربنا options و choices لضمان جلب البيانات مهما كان مسمى العمود
+    raw_options = q_data.get('options') or q_data.get('choices') or []
+    
+    # التأكد من الإجابة الصحيحة
+    correct_ans = q_data.get('correct_answer') or q_data.get('answer_text') or ""
+
+    # --- [ صمام الأمان الذكي ] ---
+    # إذا كان النمط "اختيارات" لكن الخيارات فارغة في قاعدة البيانات
+    # نحول السؤال تلقائياً لنمط "مباشرة" لكي لا يظهر السؤال ناقصاً للجمهور
+    if actual_mode == "اختيارات 📊" and not raw_options:
+        actual_mode = "مباشرة ⚡"
+
+    # --- [ مرحلة التنفيذ ] ---
+
+    # 1️⃣ استدعاء "قالب المباشر" (نص فقط)
     if actual_mode == "مباشرة ⚡":
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # 2️⃣ استدعاء "قالب الاختيارات" (نص + أزرار - دالتك رقم 4)
+    # 2️⃣ استدعاء "قالب الاختيارات" (نص + أزرار)
     else:
-        # تجهيز بيانات الأزرار الأولية
         quiz_init = {
-            'options': q_data.get('options', []),
-            'voter_list': {}, # فارغ لأن السؤال جديد
-            'votes_results': {str(i): 0 for i in range(len(q_data.get('options', [])))},
-            'current_answer': q_data.get('correct_answer')
+            'options': raw_options,
+            'voter_list': {}, # جديد تماماً
+            'votes_results': {str(i): 0 for i in range(len(raw_options))},
+            'current_answer': correct_ans
         }
         
-        # بناء الأزرار الذكية باستخدام دالتك
+        # بناء الأزرار (ستظهر الآن الأزرار الزرقاء 🔹 فوق زر البحث)
         markup = build_smart_buttons(quiz_init)
         
-        # إرسال السؤال مع الأزرار
+        # إرسال السؤال مع الأزرار التفاعلية
         return await send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup)
 
 # --- [ دالة مساعدة لدمج النص مع الأزرار ] ---
 async def send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup):
     """
-    هذه الدالة تعيد استخدام نفس تصميم النص في دالتك [3] ولكن تضيف له الأزرار
+    هذه الدالة تعيد استخدام نفس تصميم النص الفخم ولكن تضيف له الأزرار التفاعلية
     """
-    # جلب النص من دالتك الأساسية (أو كتابته هنا لضمان التطابق)
     is_pub = settings.get('is_public', False) 
     q_scope = "إذاعة عامة 🌐" if is_pub else "مسابقة داخلية 📍"
     q_mode = settings.get('mode', 'السرعة ⚡')
@@ -221,6 +235,7 @@ async def send_quiz_question_with_markup(chat_id, q_data, current_num, total_num
     try:
         return await bot.send_message(chat_id, text, reply_markup=markup, parse_mode='Markdown')
     except Exception as e:
+        # حماية في حال وجود رموز خاصة تمنع إرسال الماركدوان
         clean_text = text.replace("*", "").replace("`", "").replace("_", "")
         return await bot.send_message(chat_id, clean_text, reply_markup=markup)
         
