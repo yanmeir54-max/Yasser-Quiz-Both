@@ -153,7 +153,77 @@ def build_smart_buttons(quiz, user_id=None):
     
     buttons.append([InlineKeyboardButton(text="🔍 من اختار ماذا؟", callback_data="show_who")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# ==========================================
+# 5. دالة "الكل" والموزع الذكي (The Master Engine)
+# ==========================================
+async def send_quiz_master(chat_id, q_data, current_num, total_num, settings):
+    """
+    الدالة الرئيسية التي تقرر شكل السؤال (مباشر، اختيارات، أو تبادل)
+    """
+    style = settings.get('quiz_style', 'اختيارات 📊')
     
+    # --- [ منطق اختيار القالب ] ---
+    if style == "الكل 📋":
+        # القرعة الذكية: تختار مرة مباشر ومرة اختيارات
+        actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
+    else:
+        actual_mode = style
+
+    # 1️⃣ استدعاء "قالب المباشر" (نص فقط - دالتك رقم 3)
+    if actual_mode == "مباشرة ⚡":
+        return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
+
+    # 2️⃣ استدعاء "قالب الاختيارات" (نص + أزرار - دالتك رقم 4)
+    else:
+        # تجهيز بيانات الأزرار الأولية
+        quiz_init = {
+            'options': q_data.get('options', []),
+            'voter_list': {}, # فارغ لأن السؤال جديد
+            'votes_results': {str(i): 0 for i in range(len(q_data.get('options', [])))},
+            'current_answer': q_data.get('correct_answer')
+        }
+        
+        # بناء الأزرار الذكية باستخدام دالتك
+        markup = build_smart_buttons(quiz_init)
+        
+        # إرسال السؤال مع الأزرار
+        return await send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup)
+
+# --- [ دالة مساعدة لدمج النص مع الأزرار ] ---
+async def send_quiz_question_with_markup(chat_id, q_data, current_num, total_num, settings, markup):
+    """
+    هذه الدالة تعيد استخدام نفس تصميم النص في دالتك [3] ولكن تضيف له الأزرار
+    """
+    # جلب النص من دالتك الأساسية (أو كتابته هنا لضمان التطابق)
+    is_pub = settings.get('is_public', False) 
+    q_scope = "إذاعة عامة 🌐" if is_pub else "مسابقة داخلية 📍"
+    q_mode = settings.get('mode', 'السرعة ⚡')
+    is_hint_on = settings.get('smart_hint', False)
+    normal_hint = settings.get('normal_hint', "")
+
+    q_text = q_data.get('question_content') or q_data.get('question_text') or "⚠️ نص السؤال مفقود!"
+    
+    text = (
+        f"🎓 **الـمنـظـم:** {settings['owner_name']} ☁️\n"
+        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n"
+        f"📌 **السؤال:** « {current_num} » من « {total_num} »\n"
+        f"📂 **القسم:** `{settings.get('cat_name', 'عام')}`\n"
+        f"📡 **النطاق:** **{q_scope}**\n"
+        f"⏳ **المهلة:** {settings['time_limit']} ثانية\n"
+        f"  ❃┅┅┅┄┄┄┈•❃•┈┄┄┄┅┅┅❃\n\n"
+        f"❓ **السؤال:**\n**{q_text}**\n"
+    )
+    
+    if is_hint_on and normal_hint:
+        text += f"\n💡 **تلميح الإجابة:** {normal_hint}"
+
+    try:
+        return await bot.send_message(chat_id, text, reply_markup=markup, parse_mode='Markdown')
+    except Exception as e:
+        clean_text = text.replace("*", "").replace("`", "").replace("_", "")
+        return await bot.send_message(chat_id, clean_text, reply_markup=markup)
+        
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
