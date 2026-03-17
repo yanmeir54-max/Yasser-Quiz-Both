@@ -160,10 +160,12 @@ def get_official_quiz_style(q_data, current_index, total_q, quiz_db_id, cat_name
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
     style = settings.get('quiz_style', 'اختيارات 📊')
     quiz_db_id = settings.get('quiz_db_id')
-    cat_name = settings.get('cat_name', 'عام')
+    
+    # جلب القسم بدقة لضمان عدم خلط الإجابات
+    cat_name = settings.get('cat_name') or q_data.get('category') or "عام"
     correct_ans = str(q_data.get('answer_text') or q_data.get('correct_answer') or "").strip()
 
-    # 1️⃣ تحديد النمط
+    # 1️⃣ تحديد النمط (مباشر أم أزرار)
     if style == "الكل 📋":
         actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
     else:
@@ -172,31 +174,51 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
     if actual_mode == "مباشرة ⚡":
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # 2️⃣ نمط الاختيارات (التمويه من المساب)
+    # 2️⃣ نمط الاختيارات (نظام التمويه الصارم من المساب)
     else:
-        # 🔥 محاولة جلب خيارات من نفس القسم من قاعدة البيانات
-        wrong_picks = await get_smart_fake_options(cat_name, correct_ans)
+        # 🔥 جلب خيارات "فقط" من نفس القسم من قاعدة البيانات
+        # ملاحظة: استدعينا الدالة الجديدة get_pure_fake_options التي برمجناها سوياً
+        wrong_picks = await get_pure_fake_options(cat_name, correct_ans)
         
-        # ⚠️ خطة بديلة: إذا كان القسم جديداً أو لا توجد به بيانات كافية في القاعدة
+        # ⚠️ حماية: إذا فشل المساب في إيجاد 3 خيارات من نفس القسم
+        # نستخدم خيارات وهمية عامة بدلاً من سحب إجابات من أقسام أخرى تسبب الخلط
         if len(wrong_picks) < 3:
-            other_answers = list(set([
-                str(q.get('answer_text') or q.get('correct_answer') or "").strip() 
-                for q in all_questions_list 
-                if str(q.get('answer_text') or q.get('correct_answer')) != correct_ans
-            ]))
-            wrong_picks = random.sample(other_answers, min(3, len(other_answers)))
+            # خيارات بديلة ذكية لا تفسد منطق السؤال
+            placeholders = ["إجابة أخرى", "غير ذلك", "لا توجد إجابة", "خيار بديل"]
+            # نضيف عليها ما تيسر من القسم إذا وجدنا أقل من 3
+            needed = 3 - len(wrong_picks)
+            wrong_picks.extend(random.sample(placeholders, needed))
+
+        # 3️⃣ ضمان عدم التكرار النهائي (فلترة أخيرة)
+        # نحذف الإجابة الصحيحة لو تسللت للتمويه ونأخذ أول 3 فقط
+        final_wrong_picks = []
+        for p in wrong_picks:
+            p_clean = str(p).strip()
+            if p_clean != correct_ans and p_clean not in final_wrong_picks:
+                final_wrong_picks.append(p_clean)
         
-        # خلط الإجابة الصحيحة مع التمويه
-        final_options = wrong_picks + [correct_ans]
+        final_wrong_picks = final_wrong_picks[:3]
+
+        # 4️⃣ دمج الإجابة الصحيحة والخلط (Shuffle)
+        final_options = final_wrong_picks + [correct_ans]
         random.shuffle(final_options)
 
-        # بناء الأزرار (بالملي)
+        # 5️⃣ بناء الأزرار بستايل @QuizBot الرسمي
         markup = InlineKeyboardMarkup(row_width=1)
         for idx, opt in enumerate(final_options):
+            # الكود السري الذي يربط الزر بالرادار
             cb_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
             markup.add(InlineKeyboardButton(text=str(opt), callback_data=cb_data))
         
-        return await send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup)
+        # إرسال السؤال بالقالب الرسمي
+        return await send_quiz_question_with_official_markup(
+            chat_id, 
+            q_data, 
+            current_num, 
+            total_num, 
+            settings, 
+            markup
+        )
 
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
 async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup):
