@@ -161,9 +161,10 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
     style = settings.get('quiz_style', 'اختيارات 📊')
     quiz_db_id = settings.get('quiz_db_id')
     
-    # 🎯 سحب البيانات بناءً على هيكل جدولك الجديد
+    # 🎯 سحب البيانات الأساسية من السؤال الحالي
     cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
     correct_ans = str(q_data.get('correct_answer', "")).strip()
+    q_text = q_data.get('question_content', "")
 
     # 1️⃣ تحديد النمط (مباشر أم أزرار)
     if style == "الكل 📋":
@@ -174,32 +175,43 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
     if actual_mode == "مباشرة ⚡":
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # 2️⃣ نمط الاختيارات (التمويه الذكي)
+    # 2️⃣ نمط الاختيارات (محرك المغناطيس المزدوج)
     else:
-        # جلب إجابات "أخرى" من نفس القسم من جدول bot_questions
-        wrong_picks = await get_pure_fake_options(cat_name, correct_ans)
+        # 🔥 هنا التعديل الجوهري: استدعاء دالة المستنتج الذكي الجديدة
+        # نمرر لها نص السؤال والفرع والإجابة الصحيحة لجلب "طقم" خيارات متناسق
+        wrong_picks = await get_smart_inferred_options(q_text, cat_name, correct_ans)
         
-        # إذا كان القسم فقيراً، نستخدم خطة الطوارئ (الخيارات العامة)
+        # ⚠️ خطة الطوارئ: إذا كان القسم جديداً جداً ولم يجد المغناطيس نتائج كافية
         if len(wrong_picks) < 3:
-            placeholders = ["إجابة أخرى", "غير ذلك", "إجابة بديلة", "لا توجد إجابة"]
-            # نكمل النقص حتى نصل لـ 3 خيارات خاطئة
-            while len(wrong_picks) < 3:
-                pick = random.choice(placeholders)
-                if pick not in wrong_picks:
-                    wrong_picks.append(pick)
+            # نستخدم خيارات ذكية عامة بدلاً من الخلط مع أقسام عشوائية
+            placeholders = ["خيار بديل", "غير ذلك", "إجابة أخرى", "لا توجد إجابة"]
+            needed = 3 - len(wrong_picks)
+            # إضافة خيارات تكميلية غير مكررة
+            extra_picks = random.sample([p for p in placeholders if p not in wrong_picks], needed)
+            wrong_picks.extend(extra_picks)
 
-        # 3️⃣ دمج الإجابة الصحيحة مع الخيارات الخاطئة والخلط
+        # 3️⃣ دمج الإجابة الصحيحة والخلط النهائي (Shuffle)
+        # نضمن أخذ أول 3 خيارات تمويه فقط مع الإجابة الصحيحة
         final_options = wrong_picks[:3] + [correct_ans]
         random.shuffle(final_options)
 
-        # 4️⃣ بناء الأزرار (Markup)
+        # 4️⃣ بناء الأزرار (Inline Markup)
         markup = InlineKeyboardMarkup(row_width=1)
         for idx, opt in enumerate(final_options):
+            # كود الـ Callback يربط الاختيار برقم السؤال وقاعدة البيانات
             cb_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
             markup.add(InlineKeyboardButton(text=str(opt), callback_data=cb_data))
         
-        # إرسال السؤال بالقالب الرسمي
-        return await send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup)
+        # إرسال السؤال بالقالب الرسمي مع الأزرار الذكية
+        return await send_quiz_question_with_official_markup(
+            chat_id, 
+            q_data, 
+            current_num, 
+            total_num, 
+            settings, 
+            markup
+        )
+        
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
 async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup):
     """
@@ -231,8 +243,6 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
 # ==========================================
 # --- [ دالة خلط الاختيارات من الاقسام ] ---
 # ==========================================
-import re
-
 async def get_smart_inferred_options(question_text, category_name, correct_ans):
     try:
         correct_ans = str(correct_ans).strip()
@@ -298,7 +308,6 @@ async def get_smart_inferred_options(question_text, category_name, correct_ans):
     except Exception as e:
         print(f"❌ خطأ في المغناطيس: {e}")
         return []
-        
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
