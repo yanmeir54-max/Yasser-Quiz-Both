@@ -161,9 +161,9 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
     style = settings.get('quiz_style', 'اختيارات 📊')
     quiz_db_id = settings.get('quiz_db_id')
     
-    # جلب القسم بدقة لضمان عدم خلط الإجابات
-    cat_name = settings.get('cat_name') or q_data.get('category') or "عام"
-    correct_ans = str(q_data.get('answer_text') or q_data.get('correct_answer') or "").strip()
+    # 🎯 سحب البيانات بناءً على هيكل جدولك الجديد
+    cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
+    correct_ans = str(q_data.get('correct_answer', "")).strip()
 
     # 1️⃣ تحديد النمط (مباشر أم أزرار)
     if style == "الكل 📋":
@@ -174,52 +174,32 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
     if actual_mode == "مباشرة ⚡":
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # 2️⃣ نمط الاختيارات (نظام التمويه الصارم من المساب)
+    # 2️⃣ نمط الاختيارات (التمويه الذكي)
     else:
-        # 🔥 جلب خيارات "فقط" من نفس القسم من قاعدة البيانات
-        # ملاحظة: استدعينا الدالة الجديدة get_pure_fake_options التي برمجناها سوياً
+        # جلب إجابات "أخرى" من نفس القسم من جدول bot_questions
         wrong_picks = await get_pure_fake_options(cat_name, correct_ans)
         
-        # ⚠️ حماية: إذا فشل المساب في إيجاد 3 خيارات من نفس القسم
-        # نستخدم خيارات وهمية عامة بدلاً من سحب إجابات من أقسام أخرى تسبب الخلط
+        # إذا كان القسم فقيراً، نستخدم خطة الطوارئ (الخيارات العامة)
         if len(wrong_picks) < 3:
-            # خيارات بديلة ذكية لا تفسد منطق السؤال
-            placeholders = ["إجابة أخرى", "غير ذلك", "لا توجد إجابة", "خيار بديل"]
-            # نضيف عليها ما تيسر من القسم إذا وجدنا أقل من 3
-            needed = 3 - len(wrong_picks)
-            wrong_picks.extend(random.sample(placeholders, needed))
+            placeholders = ["إجابة أخرى", "غير ذلك", "إجابة بديلة", "لا توجد إجابة"]
+            # نكمل النقص حتى نصل لـ 3 خيارات خاطئة
+            while len(wrong_picks) < 3:
+                pick = random.choice(placeholders)
+                if pick not in wrong_picks:
+                    wrong_picks.append(pick)
 
-        # 3️⃣ ضمان عدم التكرار النهائي (فلترة أخيرة)
-        # نحذف الإجابة الصحيحة لو تسللت للتمويه ونأخذ أول 3 فقط
-        final_wrong_picks = []
-        for p in wrong_picks:
-            p_clean = str(p).strip()
-            if p_clean != correct_ans and p_clean not in final_wrong_picks:
-                final_wrong_picks.append(p_clean)
-        
-        final_wrong_picks = final_wrong_picks[:3]
-
-        # 4️⃣ دمج الإجابة الصحيحة والخلط (Shuffle)
-        final_options = final_wrong_picks + [correct_ans]
+        # 3️⃣ دمج الإجابة الصحيحة مع الخيارات الخاطئة والخلط
+        final_options = wrong_picks[:3] + [correct_ans]
         random.shuffle(final_options)
 
-        # 5️⃣ بناء الأزرار بستايل @QuizBot الرسمي
+        # 4️⃣ بناء الأزرار (Markup)
         markup = InlineKeyboardMarkup(row_width=1)
         for idx, opt in enumerate(final_options):
-            # الكود السري الذي يربط الزر بالرادار
             cb_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
             markup.add(InlineKeyboardButton(text=str(opt), callback_data=cb_data))
         
         # إرسال السؤال بالقالب الرسمي
-        return await send_quiz_question_with_official_markup(
-            chat_id, 
-            q_data, 
-            current_num, 
-            total_num, 
-            settings, 
-            markup
-        )
-
+        return await send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup)
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
 async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup):
     """
@@ -248,36 +228,37 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
     except Exception as e:
         # في حال فشل الـ HTML، نرسل نصاً بسيطاً
         return await bot.send_message(chat_id, f"❓ {q_text}", reply_markup=markup)
-        
 # ==========================================
 # --- [ دالة خلط الاختيارات من الاقسام ] ---
 # ==========================================
-async def get_pure_fake_options(cat_name, correct_ans):
+async def get_pure_fake_options(category_name, correct_ans_text):
     """
-    تجلب خيارات تمويه من نفس القسم حصراً وتضمن عدم تكرار الإجابة الصحيحة
+    تجلب خيارات خاطئة من نفس القسم لضمان صعوبة السؤال وعدم الخلط
     """
     try:
-        # البحث في سوبابيس عن إجابات في نفس القسم فقط
-        response = supabase.table("questions").select("answer_text")\
-            .eq("category", cat_name)\
-            .neq("answer_text", correct_ans)\
-            .limit(30).execute() # نسحب 30 لضمان التنوع
+        # البحث في جدول bot_questions
+        response = supabase.table("bot_questions") \
+            .select("correct_answer") \
+            .eq("category", category_name) \
+            .neq("correct_answer", correct_ans_text) \
+            .limit(20) \
+            .execute()
         
         if response.data:
-            # 1. تحويل النتائج لقائمة نصوص نظيفة
-            # 2. استخدام set لحذف أي تكرار داخل القائمة نفسها
-            all_fakes = list(set([
-                str(r['answer_text']).strip() 
+            # استخراج الإجابات وتصفيتها من المكرر والفراغات
+            all_possible_fakes = list(set([
+                str(r['correct_answer']).strip() 
                 for r in response.data 
-                if r['answer_text'] and str(r['answer_text']).strip() != correct_ans
+                if r['correct_answer'] and str(r['correct_answer']).strip() != correct_ans_text
             ]))
             
-            # إذا وجدنا ما يكفي (على الأقل 3 خيارات فريدة)
-            if len(all_fakes) >= 3:
-                return random.sample(all_fakes, 3)
-                
+            # نختار 3 إجابات عشوائية إذا توفرت
+            if len(all_possible_fakes) >= 3:
+                return random.sample(all_possible_fakes, 3)
+            return all_possible_fakes # إرجاع المتاح إذا كان أقل من 3
+            
     except Exception as e:
-        logging.error(f"⚠️ خطأ في جلب التمويه الصارم: {e}")
+        logging.error(f"❌ خطأ في جلب البيانات من bot_questions: {e}")
     
     return []
 # ==========================================
