@@ -1300,9 +1300,10 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
                 await bot.delete_message(cid, mid)
             except: 
                 pass
+    except Exception as e:
+        logging.error(f"🚨 General Broadcast Error: {e}")
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
-
 async def get_user_full_data(user_id: int):
     """جلب بيانات اللاعب من جدول users_global_profile"""
     try:
