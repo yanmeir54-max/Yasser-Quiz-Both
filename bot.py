@@ -244,84 +244,86 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
         # في حال فشل الـ HTML، نرسل نصاً بسيطاً
         return await bot.send_message(chat_id, f"❓ {q_text}", reply_markup=markup)
 # ==========================================
-# --- [ دالة خلط الاختيارات بالمغناطيس الذكي ] ---
+# --- [دالة مساعدة لتوحيد النصوص ] ---
 # ==========================================
-async def get_smart_inferred_options(question_text, category_name, correct_ans):
+def normalize_arabic(text):
+    if not text: return ""
+    text = str(text).strip()
+    # توحيد الألفات، التاء المربوطة، الياء، وحذف التشكيل
+    text = re.sub(r'[أإآ]', 'ا', text)
+    text = re.sub(r'ة', 'ه', text)
+    text = re.sub(r'ى', 'ي', text)
+    text = re.sub(r'[\u064B-\u0652]', '', text)
+    return text
+
+# ==========================================
+# --- [ دالة خلط الاختيارات (المغناطيس الفولاذي المطور) ] ---
+# ==========================================
+async def get_ultra_smart_options(question_text, category_name, correct_ans):
     try:
-        correct_ans = str(correct_ans).strip()
-        q_text = str(question_text).strip()
-        
-        # 1️⃣ [تنظيف السؤال]: حذف أدوات الاستفهام والرموز
-        stop_words = [
-            'ما', 'من', 'هو', 'هي', 'كم', 'اين', 'متى', 'الذي', 'التي', 
-            'ما هو', 'ما هي', 'من هو', 'من هي', 'كم عدد', 'ما اسم', 'ماذا', 'كيف', 'هل'
-        ]
-        
-        # استخراج الكلمات فقط (حذف الترقيم والرموز مثل ؟ ! .)
-        words = re.findall(r'\w+', q_text) 
-        
-        # تصفية الكلمات من أدوات الاستفهام
-        filtered_words = [w for w in words if w not in stop_words]
-        
-        # المغناطيس (أول كلمتين محورتين + آخر كلمتين في السؤال)
-        head_key = filtered_words[0] if len(filtered_words) > 0 else ""
-        tail_key = words[-1] if len(words) > 0 else ""
-        
-        # إذا كان السؤال طويلاً، نأخذ مفتاحاً أعمق قليلًا
-        if len(filtered_words) >= 2:
-            head_key = f"{filtered_words[0]} {filtered_words[1]}"
-        if len(words) >= 2:
-            tail_key = f"{words[-2]} {words[-1]}"
+        norm_correct = normalize_arabic(correct_ans)
+        fakes = []
+        seen_norms = {norm_correct} # لمنع التكرار
 
-        # 2️⃣ [المغناطيس المزدوج]: البحث في جدولك bot_questions
-        # نستخدم ilike للبحث المرن عن الكلمات المفتاحية في نص السؤال
-        query = f"question_content.ilike.%{head_key}%,question_content.ilike.%{tail_key}%"
-        
-        response = supabase.table("bot_questions") \
-            .select("correct_answer") \
-            .or_(query) \
-            .neq("correct_answer", correct_ans) \
-            .limit(50) \
-            .execute()
+        # 🚀 المرحلة 1: [مغناطيس رأس الإجابة] (نهر، قانون، ميناء...)
+        # إذا كانت الإجابة أكثر من كلمة، نبحث عن إجابات تبدأ بنفس الكلمة الأولى
+        ans_words = correct_ans.split()
+        if len(ans_words) > 1:
+            first_word = ans_words[0]
+            # نجلب إجابات تبدأ بنفس الكلمة من عمود correct_answer
+            res_head = supabase.table("bot_questions") \
+                .select("correct_answer") \
+                .ilike("correct_answer", f"{first_word}%") \
+                .neq("correct_answer", correct_ans) \
+                .limit(20).execute()
+            
+            for r in res_head.data:
+                opt = str(r['correct_answer']).strip()
+                if normalize_arabic(opt) not in seen_norms:
+                    fakes.append(opt)
+                    seen_norms.add(normalize_arabic(opt))
 
-        results = response.data if response.data else []
+        # 🚀 المرحلة 2: [مغناطيس سياق السؤال] (إذا نحتاج خيارات أكثر)
+        if len(fakes) < 3:
+            q_norm = normalize_arabic(question_text)
+            words = re.findall(r'\w+', q_norm)
+            junk = [normalize_arabic(w) for w in ['ما', 'من', 'اين', 'كم', 'متى', 'كيف']]
+            strong_keys = [w for w in words if w not in junk and len(w) > 3]
 
-        # خطة بديلة: إذا لم يجد نتائج كافية بالمغناطيس، يبحث بنفس القسم
-        if len(results) < 5:
-            alt_res = supabase.table("bot_questions") \
+            if strong_keys:
+                # البحث باستخدام أول وآخر كلمة قوية في نص السؤال
+                search_keys = list(set([strong_keys[0], strong_keys[-1]]))
+                or_query = ",".join([f"question_content.ilike.%{k}%" for k in search_keys])
+                
+                res_context = supabase.table("bot_questions") \
+                    .select("correct_answer").or_(or_query).limit(30).execute()
+
+                for r in res_context.data:
+                    opt = str(r['correct_answer']).strip()
+                    # فلترة بالمسطرة (الطول) والتوحيد
+                    if normalize_arabic(opt) not in seen_norms:
+                        if abs(len(opt) - len(correct_ans)) <= 12:
+                            fakes.append(opt)
+                            seen_norms.add(normalize_arabic(opt))
+
+        # 🚀 المرحلة 3: [خطة الطوارئ] (البحث بالقسم)
+        if len(fakes) < 3:
+            res_cat = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .eq("category", category_name) \
-                .neq("correct_answer", correct_ans) \
-                .limit(20) \
-                .execute()
-            results.extend(alt_res.data)
-
-        # 3️⃣ [مسطرة الأنماط]: التصفية "بالمسطرة" لضمان طقم واحد
-        fakes = []
-        is_numeric = correct_ans.isdigit()
-        ans_len = len(correct_ans)
-
-        for r in results:
-            opt = str(r['correct_answer']).strip()
-            if opt == correct_ans or opt in fakes: 
-                continue
+                .neq("correct_answer", correct_ans).limit(10).execute()
             
-            # فلتر الرقم: (سنة ضد سنة، رقم ضد رقم)
-            if is_numeric and not opt.isdigit(): 
-                continue
-            
-            # فلتر الطول: (للمحافظة على شكل الخيارات متناسق)
-            if not is_numeric and abs(len(opt) - ans_len) > 10: 
-                continue
-            
-            fakes.append(opt)
+            for r in res_cat.data:
+                opt = str(r['correct_answer']).strip()
+                if normalize_arabic(opt) not in seen_norms:
+                    fakes.append(opt)
+                    seen_norms.add(normalize_arabic(opt))
 
-        # نختار أفضل 3 خيارات تمويهية
-        final_picks = random.sample(fakes, min(len(fakes), 3))
-        return final_picks
+        # العودة بـ 3 خيارات عشوائية مما تم جمعه
+        return random.sample(fakes, min(len(fakes), 3))
 
     except Exception as e:
-        print(f"❌ خطأ في محرك المغناطيس: {e}")
+        print(f"❌ خطأ المغناطيس الشامل: {e}")
         return []
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
