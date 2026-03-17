@@ -283,7 +283,7 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         if len(fakes) < 3:
             q_norm = normalize_arabic(question_text)
             words = re.findall(r'\w+', q_norm)
-            junk = [normalize_arabic(w) for w in ['ما', 'من', 'اين', 'كم', 'متى', 'كيف']]
+            junk = [normalize_arabic(w) for w in ['ما', 'من', 'اين', 'كم', 'ماهي', 'ماهو', 'لماذا', 'كم', 'منهو', 'متى', 'هي', 'هو', 'كيف']]
             strong_keys = [w for w in words if w not in junk and len(w) > 3]
 
             if strong_keys:
