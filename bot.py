@@ -160,48 +160,44 @@ def get_official_quiz_style(q_data, current_index, total_q, quiz_db_id, cat_name
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
     try:
         style = settings.get('quiz_style', 'اختيارات 📊')
-        quiz_db_id = settings.get('quiz_db_id', 'temp') # معرف الجلسة
+        quiz_db_id = settings.get('quiz_db_id', 'temp') 
         
-        # 🎯 1. سحب البيانات من الأعمدة الصحيحة في سوبابيس
+        # 🎯 1. سحب وتجهيز البيانات الأساسية
         raw_q_text = str(q_data.get('question_content', "")).strip()
         correct_ans = str(q_data.get('correct_answer', "")).strip()
         cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
 
-        # ✂️ 2. تنظيف نص السؤال (إزالة الترقيم وأدوات الاستفهام للمغناطيس)
-        # هذا يضمن أن كلمة "نيوتن؟" تصبح "نيوتن" لكي يجدها البحث
+        # ✂️ 2. تنظيف نص السؤال للمحرك الذكي
         clean_q_text = re.sub(r'[؟!؟\.،,:]', '', raw_q_text)
 
-        # 3. تحديد النمط المختار
+        # 3. تحديد النمط (مباشر أو اختيارات)
         if style == "الكل 📋":
             actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
         else:
             actual_mode = style
 
-        # --- [ الحالة الأولى: سؤال مباشر بدون أزرار ] ---
+        # --- [ الحالة الأولى: سؤال مباشر ] ---
         if actual_mode == "مباشرة ⚡":
             return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
         # --- [ الحالة الثانية: سؤال بنمط الاختيارات الذكي ] ---
         else:
-            # 🚀 استدعاء محرك "المغناطيس المزدوج" لجلب التمويه
-            wrong_picks = await get_smart_inferred_options(clean_q_text, cat_name, correct_ans)
+            # 🚀 استدعاء "المغناطيس الفولاذي المطور" (الذي يبحث برأس الإجابة وسياق السؤال)
+            # تم تغيير اسم الدالة هنا ليتطابق مع المحرك الشامل الجديد
+            wrong_picks = await get_ultra_smart_options(clean_q_text, cat_name, correct_ans)
             
-            # 5. دمج الإجابة الصحيحة مع النتائج المستخرجة
-            # قمنا بإلغاء الخيارات العشوائية الثابتة لترك المحرك يثبت كفاءته
+            # 5. دمج الإجابة الصحيحة مع التمويهات المستخرجة
             final_options = list(wrong_picks) + [correct_ans]
-            random.shuffle(final_options) # خلط الترتيب لكي لا تكون الصح دائماً في مكان واحد
+            random.shuffle(final_options) 
 
-            # 6. بناء الأزرار (Markup) بأسلوب احترافي
-            # row_width=1 يجعل الأزرار تحت بعضها مثل بوتات المسابقات الرسمية
+            # 6. بناء الأزرار (Markup)
             markup = InlineKeyboardMarkup(row_width=1)
             
             for idx, opt in enumerate(final_options):
-                # نربط الإجابة بـ callback يحتوي على:
-                # v_ (للتصويت) | idx (رقم الخيار)
-                # ملاحظة: يمكنك تعديلها إلى ans_ إذا كنت تفضل الهيكل الجديد
+                # نستخدم v_ للتوافق مع معالج الضغطات handle_vote
                 markup.add(InlineKeyboardButton(text=str(opt), callback_data=f"v_{idx}"))
             
-            # 7. الإرسال النهائي عبر دالة الدمج
+            # 7. الإرسال بالقالب الرسمي
             return await send_quiz_question_with_official_markup(
                 chat_id, 
                 q_data, 
@@ -213,7 +209,7 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
 
     except Exception as e:
         print(f"❌ Error in Master Engine: {e}")
-        # في حال حدوث خطأ تقني، نرسل السؤال كمباشر كخطة طوارئ
+        # خطة الطوارئ: إرسال السؤال كمباشر إذا فشل محرك الاختيارات
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
 async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup):
