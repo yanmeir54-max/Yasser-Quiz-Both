@@ -4476,16 +4476,22 @@ async def unified_answer_checker(m: types.Message):
     uid = m.from_user.id
     user_text = m.text.strip() if m.text else ""
 
-    # 1️⃣ فحص المسابقات النشطة (الإذاعة العامة والخاصة)
+    # 1️⃣ فحص المسابقات النشطة
     if cid in active_quizzes and active_quizzes[cid].get('active'):
         quiz = active_quizzes[cid]
+
+        # 🛑 [الخطوة 0: قفل نمط الأزرار] 🛑
+        # إذا كان نمط المسابقة هو "اختيارات"، نوقف الرادار النصي فوراً
+        # لكي لا يستطيع المستخدم كتابة الإجابة كتابةً
+        if quiz.get('quiz_style') == 'اختيارات 📊':
+            return # الخروج من الدالة وعدم الاستجابة للرسائل النصية
+
         correct_ans = str(quiz['ans']).strip()
         
-        # ⚖️ فحص صحة الإجابة
+        # ⚖️ فحص صحة الإجابة (هذا سيعمل فقط في النمط "مباشر" الآن)
         if is_answer_correct(user_text, correct_ans):
             
             # 🔥 [نظام منع التكرار العابر للمجموعات] 🔥
-            # نفحص كل المجموعات المرتبطة بهذه المسابقة: هل هذا المستخدم (uid) موجود في قائمة الفائزين في أي منها؟
             p_ids = quiz.get('participants_ids', [cid])
             is_already_winner_globally = False
             
@@ -4496,15 +4502,11 @@ async def unified_answer_checker(m: types.Message):
                         break
             
             if is_already_winner_globally:
-                # اللاعب أجاب مسبقاً في مجموعة أخرى؛ نتجاهله بصمت أو نرسل تحذير بسيط
-                logging.info(f"🚫 محاولة تكرار مرفوضة من {m.from_user.first_name} (ID: {uid})")
+                logging.info(f"🚫 محاولة تكرار مرفوضة من {m.from_user.first_name}")
                 return
-
-            # --- [ إذا وصل الكود هنا، معناه أن هذه أول إجابة صحيحة له في هذه الجولة ] ---
 
             # 🛑 [نظام الإغلاق العالمي الفوري] ⚡ (في وضع السرعة)
             if quiz.get('mode') == 'السرعة ⚡':
-                # إغلاق السؤال في كل المجموعات فوراً لمنع أي شخص آخر من الإجابة
                 for p_cid in p_ids:
                     if p_cid in active_quizzes:
                         active_quizzes[p_cid]['active'] = False
