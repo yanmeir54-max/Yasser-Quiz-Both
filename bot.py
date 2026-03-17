@@ -3871,14 +3871,16 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "active": True, 
             "ans": ans, 
             "winners": [], 
+            "voted_users": [], # 🔥 قفل الضغطة الواحدة للأزرار
             "mode": quiz_data['mode'], 
+            "quiz_style": quiz_data.get('quiz_style', 'اختيارات 📊'), # 🔥 لإعلام الرادار النصي بالتوقف
             "hint_sent": False,
             "quiz_id": current_quiz_id, 
             "category": cat_name,
             "current_index": i + 1,
             "total_questions": len(questions)
         }
-
+        
         # --- [ نظام التلميح العادي المنفصل ] ---
         normal_hint_str = ""
         if quiz_data.get('smart_hint'):
