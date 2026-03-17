@@ -153,56 +153,49 @@ def get_official_quiz_style(q_data, current_index, total_q, quiz_db_id, cat_name
     final_text = f"{header}\n\n{body}"
     
     return final_text, markup
+
 # ==========================================
 # 5. دالة المايسترو (المطورة بستايل @QuizBot)
 # ==========================================
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
-    """
-    الدالة التي تولد الخيارات وتوجه السؤال للنمط الصحيح (مباشر أو خيارات)
-    """
     style = settings.get('quiz_style', 'اختيارات 📊')
-    quiz_db_id = settings.get('quiz_db_id') # معرف المسابقة الحالي من سوبابيس
-    
+    quiz_db_id = settings.get('quiz_db_id')
+    cat_name = settings.get('cat_name', 'عام')
+    correct_ans = str(q_data.get('answer_text') or q_data.get('correct_answer') or "").strip()
+
     # 1️⃣ تحديد النمط
     if style == "الكل 📋":
         actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
     else:
         actual_mode = style
 
-    correct_ans = str(q_data.get('answer_text') or q_data.get('correct_answer') or "").strip()
-
-    # ------------------------------------------
-    # الحالة الأولى: إذا كان النمط "مباشرة ⚡"
-    # ------------------------------------------
     if actual_mode == "مباشرة ⚡":
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
 
-    # ------------------------------------------
-    # الحالة الثانية: إذا كان النمط "اختيارات 📊" (ستايل الملي)
-    # ------------------------------------------
+    # 2️⃣ نمط الاختيارات (التمويه من المساب)
     else:
-        # أ- توليد تمويه ذكي من بنك الأسئلة
-        other_answers = list(set([
-            str(q.get('answer_text') or q.get('correct_answer') or "").strip() 
-            for q in all_questions_list 
-            if str(q.get('answer_text') or q.get('correct_answer', '')).strip() != correct_ans
-        ]))
+        # 🔥 محاولة جلب خيارات من نفس القسم من قاعدة البيانات
+        wrong_picks = await get_smart_fake_options(cat_name, correct_ans)
         
-        # ب- اختيار 3 إجابات خاطئة
-        wrong_picks = random.sample(other_answers, min(3, len(other_answers)))
+        # ⚠️ خطة بديلة: إذا كان القسم جديداً أو لا توجد به بيانات كافية في القاعدة
+        if len(wrong_picks) < 3:
+            other_answers = list(set([
+                str(q.get('answer_text') or q.get('correct_answer') or "").strip() 
+                for q in all_questions_list 
+                if str(q.get('answer_text') or q.get('correct_answer')) != correct_ans
+            ]))
+            wrong_picks = random.sample(other_answers, min(3, len(other_answers)))
         
-        # ج- دمج وخضّ الخيارات
+        # خلط الإجابة الصحيحة مع التمويه
         final_options = wrong_picks + [correct_ans]
         random.shuffle(final_options)
 
-        # د- بناء الأزرار (ستايل @QuizBot: كل خيار في سطر)
+        # بناء الأزرار (بالملي)
         markup = InlineKeyboardMarkup(row_width=1)
         for idx, opt in enumerate(final_options):
-            # التنسيق: ans_معرفالمسابقة_رقم_خيار
-            callback_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
-            markup.add(InlineKeyboardButton(text=str(opt), callback_data=callback_data))
+            cb_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
+            markup.add(InlineKeyboardButton(text=str(opt), callback_data=cb_data))
         
-        # هـ- إرسال السؤال بالقالب الرسمي الجديد
         return await send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup)
 
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
@@ -234,6 +227,30 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
         # في حال فشل الـ HTML، نرسل نصاً بسيطاً
         return await bot.send_message(chat_id, f"❓ {q_text}", reply_markup=markup)
         
+
+# ==========================================
+# --- [ دالة خلط الاختيارات من الاقسام ] ---
+# ==========================================
+async def get_smart_fake_options(cat_name, correct_ans):
+    """
+    تذهب لجدول الأسئلة وتجلب إجابات تنتمي لنفس القسم لضمان صعوبة التخمين
+    """
+    try:
+        # البحث في سوبابيس عن إجابات في نفس القسم ولا تساوي الإجابة الصحيحة
+        response = supabase.table("questions").select("answer_text")\
+            .eq("category", cat_name)\
+            .neq("answer_text", correct_ans)\
+            .limit(20).execute()
+        
+        if response.data and len(response.data) >= 3:
+            # استخراج النصوص وتحويلها لقائمة فريدة
+            all_fakes = list(set([r['answer_text'] for r in response.data if r['answer_text']]))
+            return random.sample(all_fakes, 3)
+    except Exception as e:
+        print(f"⚠️ خطأ في جلب التمويه من القاعدة: {e}")
+    
+    return [] # نعود بقائمة فارغة إذا لم نجد كفايتنا
+
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
