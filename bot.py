@@ -231,36 +231,74 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
 # ==========================================
 # --- [ دالة خلط الاختيارات من الاقسام ] ---
 # ==========================================
-async def get_pure_fake_options(category_name, correct_ans_text):
-    """
-    تجلب خيارات خاطئة من نفس القسم لضمان صعوبة السؤال وعدم الخلط
-    """
+import re
+
+async def get_smart_inferred_options(question_text, category_name, correct_ans):
     try:
-        # البحث في جدول bot_questions
+        correct_ans = str(correct_ans).strip()
+        q_text = str(question_text).strip()
+        
+        # 1️⃣ [تنظيف السؤال]: حذف أدوات الاستفهام والكلمات الشائعة
+        # الكلمات التي نريد تجاهلها في بداية السؤال
+        stop_words = [
+            'ما', 'من', 'هو', 'هي', 'كم', 'اين', 'متى', 'الذي', 'التي', 
+            'ماهو', 'ماهي', 'ما هو ', 'منهو', 'منهي', 'كم عدد', 'مااسم', 'ماذا', 'كيف'
+        ]
+        
+        # تحويل النص لقائمة كلمات نظيفة
+        words = re.findall(r'\w+', q_id) # استخراج الكلمات فقط
+        
+        # استخراج "مفتاح البداية" (أول كلمتين بعد أدوات الاستفهام)
+        filtered_words = [w for w in words if w not in stop_words]
+        head_key = " ".join(filtered_words[:2]) if len(filtered_words) >= 2 else (filtered_words[0] if filtered_words else "")
+
+        # استخراج "مفتاح النهاية" (آخر كلمتين في السؤال لضمان السياق)
+        tail_key = " ".join(words[-2:]) if len(words) >= 2 else ""
+
+        # 2️⃣ [المغناطيس المزدوج]: البحث في سوبابيس باستخدام البداية أو النهاية
+        # سنبحث عن الأسئلة التي تحتوي على (جوهر البداية) أو (سياق النهاية)
+        search_query = f"question_content.ilike.%{head_key}%,question_content.ilike.%{tail_key}%"
+        
         response = supabase.table("bot_questions") \
             .select("correct_answer") \
-            .eq("category", category_name) \
-            .neq("correct_answer", correct_ans_text) \
-            .limit(20) \
+            .or_(search_query) \
+            .neq("correct_answer", correct_ans) \
+            .limit(40) \
             .execute()
-        
-        if response.data:
-            # استخراج الإجابات وتصفيتها من المكرر والفراغات
-            all_possible_fakes = list(set([
-                str(r['correct_answer']).strip() 
-                for r in response.data 
-                if r['correct_answer'] and str(r['correct_answer']).strip() != correct_ans_text
-            ]))
+
+        if not response.data:
+            # إذا لم يجد شيئاً بالمغناطيس، يعود للبحث بالقسم كخطة بديلة
+            response = supabase.table("bot_questions") \
+                .select("correct_answer") \
+                .eq("category", category_name) \
+                .limit(20).execute()
+
+        # 3️⃣ [مسطرة الأنماط]: تصفية الإجابات لتكون طقم واحد
+        fakes = []
+        is_numeric = correct_ans.isdigit()
+        ans_len = len(correct_ans)
+
+        for r in response.data:
+            opt = str(r['correct_answer']).strip()
+            if opt == correct_ans or opt in fakes: continue
             
-            # نختار 3 إجابات عشوائية إذا توفرت
-            if len(all_possible_fakes) >= 3:
-                return random.sample(all_possible_fakes, 3)
-            return all_possible_fakes # إرجاع المتاح إذا كان أقل من 3
+            # شرط الرقم: إذا الإجابة سنة، التمويه لازم يكون سنة
+            if is_numeric and not opt.isdigit(): continue
             
+            # شرط الطول: تقارب بصري (فرق لا يتجاوز 8 أحرف)
+            if not is_numeric and abs(len(opt) - ans_len) > 8: continue
+            
+            fakes.append(opt)
+
+        # نختار أفضل 3 خيارات
+        if len(fakes) >= 3:
+            return random.sample(fakes, 3)
+        return fakes
+
     except Exception as e:
-        logging.error(f"❌ خطأ في جلب البيانات من bot_questions: {e}")
-    
-    return []
+        print(f"❌ خطأ في المغناطيس: {e}")
+        return []
+        
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
