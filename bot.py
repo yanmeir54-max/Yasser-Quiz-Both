@@ -1272,49 +1272,34 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         await asyncio.sleep(5)
         await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 🚀 [ الخطوة الجوهرية 6: التصفية وتسجيل البيانات ] 🚀
+        # 🚀 [ الخطوة الجوهرية 6: التصفية فقط ] 🚀
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
-        
+
         if final_groups:
-            # تحديث الحالة البصرية قبل المحرك مباشرة
-            launch_tasks = [bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") for cid, mid in group_msgs.items() if cid in final_groups]
+            # تحديث الحالة البصرية للمجموعات التي أكدت البقاء في المسابقة
+            launch_tasks = [
+                bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") 
+                for cid, mid in group_msgs.items() if cid in final_groups
+            ]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             try:
-                # أ. إنشاء السجل الرقمي (مرة واحدة فقط) مع إضافة القسم
-                active_res = supabase.table("active_quizzes").insert({
-                    "quiz_name": quiz_name,
-                    "category_name": cat_info,  # 🔥 إضافة القسم هنا ليظهر في settings['cat_name']
-                    "created_by": owner_id, 
-                    "is_global": True,
-                    "is_active": True,
-                    "total_questions": q_count
-                    # تم حذف participants_ids من هنا لأننا سنعتمد على جدول quiz_participants
-                }).execute()
+                # 🛑 ملاحظة: تم حذف جميع عمليات supabase.insert من هنا تماماً
+                # المحرك (Engine) هو المسؤول الوحيد عن إنشاء السجل الرقمي وربط المشاركين
                 
-                if not active_res.data:
-                    raise Exception("فشل إنشاء سجل المسابقة الرئيسي")
-
-                new_quiz_db_id = active_res.data[0]['id']
-
-                # ب. تسجيل المشاركين (الحبل السري) - تسجيل جماعي واحد
-                participant_data = [{"quiz_id": new_quiz_db_id, "chat_id": cid} for cid in final_groups]
-                supabase.table("quiz_participants").insert(participant_data).execute()
-
                 # ج. استدعاء المحرك العالمي لبدء بث الأسئلة
-                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", new_quiz_db_id)
+                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", quiz_id)
 
-            except Exception as db_err:
-                logging.error(f"❌ خطأ قاعدة البيانات: {db_err}")
-                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء التسجيل الرقمي: {db_err}")
-        
-        # 7. التنظيف النهائي لرسائل الإعلان
+            except Exception as e:
+                logging.error(f"🚨 Error starting engine: {e}")
+                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
+
+        # 7. التنظيف النهائي لرسائل الإعلان لجميع المجموعات
         for cid, mid in group_msgs.items():
-            try: await bot.delete_message(cid, mid)
-            except: pass
-
-    except Exception as e:
-        logging.error(f"🚨 General Broadcast Error: {e}")
+            try: 
+                await bot.delete_message(cid, mid)
+            except: 
+                pass
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 
@@ -4210,52 +4195,51 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         group_scores = {cid: {} for cid in all_chats}
         messages_to_delete = {cid: [] for cid in all_chats}
         results_to_delete = {cid: [] for cid in all_chats}
-        # 🟢 [الخطوة 1] فتح سجل للمسابقة في سوبابيس 
+        # 🟢 [الخطوة 1] فتح سجل للمسابقة في سوبابيس (المكان الوحيد للـ Insert)
         current_quiz_db_id = None
         try:
+            # دمج القسم وتفاصيل المسابقة في سجل واحد
             quiz_entry = supabase.table("active_quizzes").insert({
                 "quiz_name": f"إذاعة {owner_name}",
-                "created_by": 2026, 
+                "created_by": owner_id, 
                 "is_global": True,
                 "is_active": True,
-                "participants_ids": all_chats, 
+                "participants_ids": final_groups, # المجموعات المصفاة التي وصلت للمحرك
                 "total_questions": total_q,
-                "category_name": selected_questions[0].get('category', 'عام') # تسجيل قسم أول سؤال مبدئياً
+                "category_name": selected_questions[0].get('category', 'عام') # القسم من أول سؤال
             }).execute()
             
             if quiz_entry.data:
                 current_quiz_db_id = quiz_entry.data[0]['id']
-                logging.info(f"✅ تم بدء السجل الرقمي بنجاح ID: {current_quiz_db_id}")
+                logging.info(f"✅ تم بدء السجل الرقمي الموحد ID: {current_quiz_db_id}")
 
-                # 🔥 [ تسجيل المجموعات رسمياً ] 🔥
-                participants_records = [{"quiz_id": current_quiz_db_id, "chat_id": cid} for cid in all_chats]
+                # 🔥 [ الربط الجوهري ] 🔥
+                # تسجيل المجموعات في جدول المشاركين باستخدام الـ ID الجديد فوراً
+                participants_records = [{"quiz_id": current_quiz_db_id, "chat_id": cid} for cid in final_groups]
                 supabase.table("quiz_participants").insert(participants_records).execute()
-                logging.info(f"🔗 تم ربط {len(all_chats)} مجموعة بجدول المشاركين")
+                logging.info(f"🔗 تم ربط {len(final_groups)} مجموعة بالسجل {current_quiz_db_id}")
 
         except Exception as e:
             logging.error(f"❌ خطأ سوبابيس (بدء المسابقة): {e}")
 
         # --- [ د ] دورة البث الموحدة ---
         for i, q in enumerate(selected_questions):
-            # 🔥 تصفير قائمة الممنوعين لهذا السؤال
+            # تصفير قائمة الممنوعين لكل سؤال
             answered_users_global[i + 1] = [] 
 
             ans = str(q.get('correct_answer') or q.get('answer_text') or "").strip()
-            # استخراج اسم القسم من السؤال الحالي
-            cat_name = q.get('category') or q.get('section') or "عام" 
+            cat_name = q.get('category') or q.get('section') or "عام"
             
-            # 🔵 [الخطوة 2] تحديث سوبابيس (الإجابة + الفهرس + اسم القسم)
+            # 🔵 [الخطوة 2] تحديث السجل الحالي فقط (Update)
             if current_quiz_db_id:
                 try:
                     supabase.table("active_quizzes").update({
                         "current_answer": ans,
                         "current_index": i + 1,
-                        "category_name": cat_name # التحديث الجوهري لظهور القسم في القالب
+                        "category_name": cat_name # تحديث القسم ديناميكياً مع كل سؤال
                     }).eq("id", current_quiz_db_id).execute()
-                except Exception as update_err:
-                    logging.error(f"⚠️ فشل تحديث بيانات السؤال في سوبابيس: {update_err}")
+                except: pass
 
-            
             # داخل دالة engine_global_broadcast -> حلقة الأسئلة
             for cid in all_chats:
                 active_quizzes[cid] = {
