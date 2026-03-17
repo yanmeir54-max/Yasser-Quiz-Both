@@ -4586,52 +4586,44 @@ async def unified_answer_checker(m: types.Message):
 @dp.callback_query_handler(lambda c: c.data.startswith('ans_'))
 async def process_quiz_answer(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    user_name = callback_query.from_user.full_name
     chat_id = callback_query.message.chat.id
     
+    # 1. فك التشفير
     data_parts = callback_query.data.split('_')
     q_id_from_button = int(data_parts[1])
     option_idx = int(data_parts[3])
 
+    # 2. جلب بيانات المسابقة من الرادار
     quiz = active_quizzes.get(chat_id)
     
-    # 1. التحقق من صلاحية السؤال
-    if not quiz or not quiz.get('active'):
-        return await callback_query.answer("⚠️ انتهى وقت السؤال!", show_alert=False)
+    # 🔥 القفل الفوري: إذا توقف المحرك أو انتهى الوقت، ارفض الضغطة فوراً
+    if not quiz or quiz.get('active') == False:
+        return await callback_query.answer("🚫 انتهى وقت استقبال الإجابات لهذا السؤال!", show_alert=True)
 
+    # 3. التأكد من أن الزر ينتمي للمسابقة الحالية (منع التداخل)
     if quiz.get('quiz_id') != q_id_from_button:
-        return await callback_query.answer("🚫 مسابقة قديمة.", show_alert=True)
+        return await callback_query.answer("⚠️ هذه الأزرار منتهية الصلاحية.", show_alert=True)
 
-    # 2. 🔥 القفل الناري: التحقق هل ضغط المستخدم سابقاً؟
-    # سنضيف قائمة 'voted_users' في ذاكرة السؤال (الرادار)
-    if 'voted_users' not in quiz:
-        quiz['voted_users'] = []
-
+    # 4. قفل المحاولة الواحدة (الذي أصلحناه سابقاً)
+    if 'voted_users' not in quiz: quiz['voted_users'] = []
     if user_id in quiz['voted_users']:
-        return await callback_query.answer("عذراً، لديك محاولة واحدة فقط لكل سؤال! ✋", show_alert=True)
+        return await callback_query.answer("لديك محاولة واحدة فقط! 🧐", show_alert=False)
 
-    # 3. تسجيل المستخدم فوراً (بصمة الضغط)
+    # 5. تسجيل الضغطة (بصمة المستخدم)
     quiz['voted_users'].append(user_id)
 
-    # 4. التحقق من صحة الإجابة
+    # 6. التحقق من الإجابة (بالملي)
     try:
         selected_text = callback_query.message.reply_markup.inline_keyboard[option_idx][0].text
+        correct_ans = quiz.get('ans', "")
+
+        if selected_text == correct_ans:
+            quiz['winners'].append({'id': user_id, 'name': callback_query.from_user.full_name})
+            await callback_query.answer("إجابة صحيحة! 🎉", show_alert=False)
+        else:
+            await callback_query.answer("إجابة خاطئة! ❌", show_alert=False)
     except:
-        selected_text = ""
-
-    correct_ans = quiz.get('ans', "")
-
-    if selected_text == correct_ans:
-        # ✅ صح
-        quiz['winners'].append({
-            'id': user_id,
-            'name': user_name,
-            'time': time.time()
-        })
-        await callback_query.answer("إجابة صحيحة! 🎉 بطل..", show_alert=False)
-    else:
-        # ❌ خطأ (الآن لن يستطيع الضغط مرة أخرى لأنه سجل في voted_users)
-        await callback_query.answer("للأسف، إجابة خاطئة! ❌ حظاً أوفر في السؤال القادم.", show_alert=True)
+        await callback_query.answer("خطأ في معالجة الإجابة.")
         
 # ============================================================
 # 1. إعداد حالات الإدارة - Admin States
@@ -4644,6 +4636,8 @@ class AdminStates(StatesGroup):
     # حالات إدارة المتغيرات (المجموعات والمستودعات)
     waiting_for_var_name = State()   # لاسم المتغير الجديد
     waiting_for_var_value = State()  # لقيمة الـ ID الجديد
+
+
 # =========================================
 # 2. كيبوردات غرفة عمليات المطور
 # =========================================
