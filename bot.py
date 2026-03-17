@@ -227,30 +227,37 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
         # في حال فشل الـ HTML، نرسل نصاً بسيطاً
         return await bot.send_message(chat_id, f"❓ {q_text}", reply_markup=markup)
         
-
 # ==========================================
 # --- [ دالة خلط الاختيارات من الاقسام ] ---
 # ==========================================
-async def get_smart_fake_options(cat_name, correct_ans):
+async def get_pure_fake_options(cat_name, correct_ans):
     """
-    تذهب لجدول الأسئلة وتجلب إجابات تنتمي لنفس القسم لضمان صعوبة التخمين
+    تجلب خيارات تمويه من نفس القسم حصراً وتضمن عدم تكرار الإجابة الصحيحة
     """
     try:
-        # البحث في سوبابيس عن إجابات في نفس القسم ولا تساوي الإجابة الصحيحة
+        # البحث في سوبابيس عن إجابات في نفس القسم فقط
         response = supabase.table("questions").select("answer_text")\
             .eq("category", cat_name)\
             .neq("answer_text", correct_ans)\
-            .limit(20).execute()
+            .limit(30).execute() # نسحب 30 لضمان التنوع
         
-        if response.data and len(response.data) >= 3:
-            # استخراج النصوص وتحويلها لقائمة فريدة
-            all_fakes = list(set([r['answer_text'] for r in response.data if r['answer_text']]))
-            return random.sample(all_fakes, 3)
+        if response.data:
+            # 1. تحويل النتائج لقائمة نصوص نظيفة
+            # 2. استخدام set لحذف أي تكرار داخل القائمة نفسها
+            all_fakes = list(set([
+                str(r['answer_text']).strip() 
+                for r in response.data 
+                if r['answer_text'] and str(r['answer_text']).strip() != correct_ans
+            ]))
+            
+            # إذا وجدنا ما يكفي (على الأقل 3 خيارات فريدة)
+            if len(all_fakes) >= 3:
+                return random.sample(all_fakes, 3)
+                
     except Exception as e:
-        print(f"⚠️ خطأ في جلب التمويه من القاعدة: {e}")
+        logging.error(f"⚠️ خطأ في جلب التمويه الصارم: {e}")
     
-    return [] # نعود بقائمة فارغة إذا لم نجد كفايتنا
-
+    return []
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
