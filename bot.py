@@ -4115,10 +4115,10 @@ async def run_countdown(chat_id):
     try:
         msg = await bot.send_message(chat_id, "⏳ استعدوا.. السؤال القادم بعد: 3")
         for i in range(2, 0, -1):
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.5)
             try: await bot.edit_message_text(f"⏳ استعدوا.. السؤال القادم بعد: {i}", chat_id, msg.message_id)
             except: pass
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.5)
         try: await bot.delete_message(chat_id, msg.message_id)
         except: pass
     except: pass
