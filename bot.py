@@ -158,60 +158,63 @@ def get_official_quiz_style(q_data, current_index, total_q, quiz_db_id, cat_name
 # 5. دالة المايسترو (المطورة بستايل @QuizBot)
 # ==========================================
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
-    style = settings.get('quiz_style', 'اختيارات 📊')
-    quiz_db_id = settings.get('quiz_db_id')
-    
-    # 🎯 سحب البيانات الأساسية من السؤال الحالي
-    cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
-    correct_ans = str(q_data.get('correct_answer', "")).strip()
-    q_text = q_data.get('question_content', "")
+    try:
+        style = settings.get('quiz_style', 'اختيارات 📊')
+        quiz_db_id = settings.get('quiz_db_id', 'temp') # معرف الجلسة
+        
+        # 🎯 1. سحب البيانات من الأعمدة الصحيحة في سوبابيس
+        raw_q_text = str(q_data.get('question_content', "")).strip()
+        correct_ans = str(q_data.get('correct_answer', "")).strip()
+        cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
 
-    # 1️⃣ تحديد النمط (مباشر أم أزرار)
-    if style == "الكل 📋":
-        actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
-    else:
-        actual_mode = style
+        # ✂️ 2. تنظيف نص السؤال (إزالة الترقيم وأدوات الاستفهام للمغناطيس)
+        # هذا يضمن أن كلمة "نيوتن؟" تصبح "نيوتن" لكي يجدها البحث
+        clean_q_text = re.sub(r'[؟!؟\.،,:]', '', raw_q_text)
 
-    if actual_mode == "مباشرة ⚡":
+        # 3. تحديد النمط المختار
+        if style == "الكل 📋":
+            actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
+        else:
+            actual_mode = style
+
+        # --- [ الحالة الأولى: سؤال مباشر بدون أزرار ] ---
+        if actual_mode == "مباشرة ⚡":
+            return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
+
+        # --- [ الحالة الثانية: سؤال بنمط الاختيارات الذكي ] ---
+        else:
+            # 🚀 استدعاء محرك "المغناطيس المزدوج" لجلب التمويه
+            wrong_picks = await get_smart_inferred_options(clean_q_text, cat_name, correct_ans)
+            
+            # 5. دمج الإجابة الصحيحة مع النتائج المستخرجة
+            # قمنا بإلغاء الخيارات العشوائية الثابتة لترك المحرك يثبت كفاءته
+            final_options = list(wrong_picks) + [correct_ans]
+            random.shuffle(final_options) # خلط الترتيب لكي لا تكون الصح دائماً في مكان واحد
+
+            # 6. بناء الأزرار (Markup) بأسلوب احترافي
+            # row_width=1 يجعل الأزرار تحت بعضها مثل بوتات المسابقات الرسمية
+            markup = InlineKeyboardMarkup(row_width=1)
+            
+            for idx, opt in enumerate(final_options):
+                # نربط الإجابة بـ callback يحتوي على:
+                # v_ (للتصويت) | idx (رقم الخيار)
+                # ملاحظة: يمكنك تعديلها إلى ans_ إذا كنت تفضل الهيكل الجديد
+                markup.add(InlineKeyboardButton(text=str(opt), callback_data=f"v_{idx}"))
+            
+            # 7. الإرسال النهائي عبر دالة الدمج
+            return await send_quiz_question_with_official_markup(
+                chat_id, 
+                q_data, 
+                current_num, 
+                total_num, 
+                settings, 
+                markup
+            )
+
+    except Exception as e:
+        print(f"❌ Error in Master Engine: {e}")
+        # في حال حدوث خطأ تقني، نرسل السؤال كمباشر كخطة طوارئ
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
-
-    # 2️⃣ نمط الاختيارات (محرك المغناطيس المزدوج)
-    else:
-        # 🔥 هنا التعديل الجوهري: استدعاء دالة المستنتج الذكي الجديدة
-        # نمرر لها نص السؤال والفرع والإجابة الصحيحة لجلب "طقم" خيارات متناسق
-        wrong_picks = await get_smart_inferred_options(q_text, cat_name, correct_ans)
-        
-        # ⚠️ خطة الطوارئ: إذا كان القسم جديداً جداً ولم يجد المغناطيس نتائج كافية
-        if len(wrong_picks) < 3:
-            # نستخدم خيارات ذكية عامة بدلاً من الخلط مع أقسام عشوائية
-            placeholders = ["خيار بديل", "غير ذلك", "إجابة أخرى", "لا توجد إجابة"]
-            needed = 3 - len(wrong_picks)
-            # إضافة خيارات تكميلية غير مكررة
-            extra_picks = random.sample([p for p in placeholders if p not in wrong_picks], needed)
-            wrong_picks.extend(extra_picks)
-
-        # 3️⃣ دمج الإجابة الصحيحة والخلط النهائي (Shuffle)
-        # نضمن أخذ أول 3 خيارات تمويه فقط مع الإجابة الصحيحة
-        final_options = wrong_picks[:3] + [correct_ans]
-        random.shuffle(final_options)
-
-        # 4️⃣ بناء الأزرار (Inline Markup)
-        markup = InlineKeyboardMarkup(row_width=1)
-        for idx, opt in enumerate(final_options):
-            # كود الـ Callback يربط الاختيار برقم السؤال وقاعدة البيانات
-            cb_data = f"ans_{quiz_db_id}_{current_num}_{idx}"
-            markup.add(InlineKeyboardButton(text=str(opt), callback_data=cb_data))
-        
-        # إرسال السؤال بالقالب الرسمي مع الأزرار الذكية
-        return await send_quiz_question_with_official_markup(
-            chat_id, 
-            q_data, 
-            current_num, 
-            total_num, 
-            settings, 
-            markup
-        )
-        
 # --- [ دالة الإرسال بستايل @QuizBot الرسمي ] ---
 async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, total_num, settings, markup):
     """
@@ -241,72 +244,84 @@ async def send_quiz_question_with_official_markup(chat_id, q_data, current_num, 
         # في حال فشل الـ HTML، نرسل نصاً بسيطاً
         return await bot.send_message(chat_id, f"❓ {q_text}", reply_markup=markup)
 # ==========================================
-# --- [ دالة خلط الاختيارات من الاقسام ] ---
+# --- [ دالة خلط الاختيارات بالمغناطيس الذكي ] ---
 # ==========================================
 async def get_smart_inferred_options(question_text, category_name, correct_ans):
     try:
         correct_ans = str(correct_ans).strip()
         q_text = str(question_text).strip()
         
-        # 1️⃣ [تنظيف السؤال]: حذف أدوات الاستفهام والكلمات الشائعة
-        # الكلمات التي نريد تجاهلها في بداية السؤال
+        # 1️⃣ [تنظيف السؤال]: حذف أدوات الاستفهام والرموز
         stop_words = [
             'ما', 'من', 'هو', 'هي', 'كم', 'اين', 'متى', 'الذي', 'التي', 
-            'ماهو', 'ماهي', 'ما هو ', 'منهو', 'منهي', 'كم عدد', 'مااسم', 'ماذا', 'كيف'
+            'ماهو', 'ماهي', 'منهو', 'منهي', 'كم عدد', 'مااسم', 'ماذا', 'كيف', 'هل'
         ]
         
-        # تحويل النص لقائمة كلمات نظيفة
-        words = re.findall(r'\w+', q_id) # استخراج الكلمات فقط
+        # استخراج الكلمات فقط (حذف الترقيم والرموز مثل ؟ ! .)
+        words = re.findall(r'\w+', q_text) 
         
-        # استخراج "مفتاح البداية" (أول كلمتين بعد أدوات الاستفهام)
+        # تصفية الكلمات من أدوات الاستفهام
         filtered_words = [w for w in words if w not in stop_words]
-        head_key = " ".join(filtered_words[:2]) if len(filtered_words) >= 2 else (filtered_words[0] if filtered_words else "")
+        
+        # المغناطيس (أول كلمتين محورتين + آخر كلمتين في السؤال)
+        head_key = filtered_words[0] if len(filtered_words) > 0 else ""
+        tail_key = words[-1] if len(words) > 0 else ""
+        
+        # إذا كان السؤال طويلاً، نأخذ مفتاحاً أعمق قليلًا
+        if len(filtered_words) >= 2:
+            head_key = f"{filtered_words[0]} {filtered_words[1]}"
+        if len(words) >= 2:
+            tail_key = f"{words[-2]} {words[-1]}"
 
-        # استخراج "مفتاح النهاية" (آخر كلمتين في السؤال لضمان السياق)
-        tail_key = " ".join(words[-2:]) if len(words) >= 2 else ""
-
-        # 2️⃣ [المغناطيس المزدوج]: البحث في سوبابيس باستخدام البداية أو النهاية
-        # سنبحث عن الأسئلة التي تحتوي على (جوهر البداية) أو (سياق النهاية)
-        search_query = f"question_content.ilike.%{head_key}%,question_content.ilike.%{tail_key}%"
+        # 2️⃣ [المغناطيس المزدوج]: البحث في جدولك bot_questions
+        # نستخدم ilike للبحث المرن عن الكلمات المفتاحية في نص السؤال
+        query = f"question_content.ilike.%{head_key}%,question_content.ilike.%{tail_key}%"
         
         response = supabase.table("bot_questions") \
             .select("correct_answer") \
-            .or_(search_query) \
+            .or_(query) \
             .neq("correct_answer", correct_ans) \
-            .limit(40) \
+            .limit(50) \
             .execute()
 
-        if not response.data:
-            # إذا لم يجد شيئاً بالمغناطيس، يعود للبحث بالقسم كخطة بديلة
-            response = supabase.table("bot_questions") \
+        results = response.data if response.data else []
+
+        # خطة بديلة: إذا لم يجد نتائج كافية بالمغناطيس، يبحث بنفس القسم
+        if len(results) < 5:
+            alt_res = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .eq("category", category_name) \
-                .limit(20).execute()
+                .neq("correct_answer", correct_ans) \
+                .limit(20) \
+                .execute()
+            results.extend(alt_res.data)
 
-        # 3️⃣ [مسطرة الأنماط]: تصفية الإجابات لتكون طقم واحد
+        # 3️⃣ [مسطرة الأنماط]: التصفية "بالمسطرة" لضمان طقم واحد
         fakes = []
         is_numeric = correct_ans.isdigit()
         ans_len = len(correct_ans)
 
-        for r in response.data:
+        for r in results:
             opt = str(r['correct_answer']).strip()
-            if opt == correct_ans or opt in fakes: continue
+            if opt == correct_ans or opt in fakes: 
+                continue
             
-            # شرط الرقم: إذا الإجابة سنة، التمويه لازم يكون سنة
-            if is_numeric and not opt.isdigit(): continue
+            # فلتر الرقم: (سنة ضد سنة، رقم ضد رقم)
+            if is_numeric and not opt.isdigit(): 
+                continue
             
-            # شرط الطول: تقارب بصري (فرق لا يتجاوز 8 أحرف)
-            if not is_numeric and abs(len(opt) - ans_len) > 8: continue
+            # فلتر الطول: (للمحافظة على شكل الخيارات متناسق)
+            if not is_numeric and abs(len(opt) - ans_len) > 10: 
+                continue
             
             fakes.append(opt)
 
-        # نختار أفضل 3 خيارات
-        if len(fakes) >= 3:
-            return random.sample(fakes, 3)
-        return fakes
+        # نختار أفضل 3 خيارات تمويهية
+        final_picks = random.sample(fakes, min(len(fakes), 3))
+        return final_picks
 
     except Exception as e:
-        print(f"❌ خطأ في المغناطيس: {e}")
+        print(f"❌ خطأ في محرك المغناطيس: {e}")
         return []
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
