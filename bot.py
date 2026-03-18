@@ -4726,43 +4726,52 @@ async def unified_answer_checker(m: types.Message):
                         quiz['active'] = False
                     return
 # ==========================================
-# --- [ رادار إجابات الـ Poll الهجين ] ---
+# --- [ رادار إجابات الـ Poll الهجين المطور ] ---
 # ==========================================
 @dp.poll_answer_handler()
 async def handle_poll_answer(poll_answer: types.PollAnswer):
     user_id = poll_answer.user.id
+    user_name = poll_answer.user.full_name
     poll_id = poll_answer.poll_id
     
     # 1. جلب بيانات السؤال من "المخزن السريع" (active_polls)
-    # الذي سجلناه في دالة المايسترو
+    # ملاحظة: يجب أن يكون المايسترو قد خزن هذه البيانات عند الإرسال
     poll_info = active_polls.get(poll_id)
     
     if not poll_info:
-        # إذا لم نجد الـ ID، يعني السؤال انتهى أو البوت أعاد التشغيل
+        # إذا لم نجد الـ ID، قد يكون السؤال قديماً أو البوت أعيد تشغيله
         return
 
-    # 2. التحقق من الإجابة (مقارنة الـ ID الذي ضغط عليه اللاعب بالـ ID الصحيح)
-    user_option_id = poll_answer.option_ids[0] # الخيار الأول الذي اختاره
+    # 2. التحقق من الإجابة (مقارنة الاختيار بالـ ID الصحيح)
+    user_option_id = poll_answer.option_ids[0] 
     is_correct = (user_option_id == poll_info['correct_id'])
 
-    # 3. حساب وقت الاستجابة (بالملي ثانية) لنظام "من سبق لبق"
-    # الفرق بين "الآن" ووقت إرسال السؤال "start_time"
+    # 3. حساب وقت الاستجابة (دقة أجزاء الثانية)
     response_time = (datetime.now() - poll_info['start_time']).total_seconds()
 
-    # 4. تسجيل الإجابة في جدول "سجل الإجابة" (سوبابيس)
-    # نرسل: ID المستخدم، ID السؤال، هل صح؟، والوقت المستغرق
-    await record_poll_answer_in_db(
-        user_id=user_id,
-        q_id=poll_info['q_id'],
-        is_correct=is_correct,
-        response_time=response_time,
-        user_name=poll_answer.user.full_name
-    )
+    # 4. تجهيز بيانات الإدراج لجدول answers_log بالملي
+    answer_data = {
+        "quiz_id": poll_info.get('db_quiz_id'),      # الآيدي من جدول active_quizzes
+        "quiz_type": "اختيارات 📊",                  # نوع السؤال
+        "category_name": poll_info.get('category'),  # القسم (إسلامية، جغرافيا..)
+        "chat_id": poll_info.get('chat_id'),         # آيدي المجموعة أو الخاص
+        "user_id": user_id,
+        "user_name": user_name,
+        "is_correct": is_correct,
+        "points_earned": 10 if is_correct else 0,    # نظام النقاط الافتراضي
+        "question_no": poll_info.get('current_num'), # ترتيب السؤال في المسابقة
+        "total_quiz_questions": poll_info.get('total_num'),
+        "answer_text": poll_info.get('correct_text') if is_correct else "خاطئة",
+        "created_at": "now()"
+    }
 
-    # 5. [قرح جو]: إذا كانت الإجابة صحيحة، يمكننا طباعة تنبيه في الكونسول
-    if is_correct:
-        print(f"✅ كفو! {poll_answer.user.full_name} أجاب صح في {response_time:.2f} ثانية")
-        
+    # 5. 🚀 استدعاء دالة التسجيل في سوبابيس
+    await record_poll_answer_in_db(answer_data)
+
+    # 6. [قرح جو]: طباعة سريعة للرصد
+    status = "✅ كفو أصاب" if is_correct else "❌ أخطأ"
+    print(f"📡 [رصد]: {user_name} | {status} | الوقت: {response_time:.2f} ثانية")
+    
 # ============================================================
 # 1. إعداد حالات الإدارة - Admin States
 # ============================================================
