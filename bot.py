@@ -4010,14 +4010,16 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "active": True, 
             "ans": ans, 
             "winners": [], 
-            "voted_users": [], # 🔥 قفل الضغطة الواحدة للأزرار
+            "voted_users": [], 
             "mode": quiz_data['mode'], 
-            "quiz_style": quiz_data.get('quiz_style', 'اختيارات 📊'), # 🔥 لإعلام الرادار النصي بالتوقف
-            "hint_sent": False,
-            "quiz_id": current_quiz_id, 
+            "quiz_style": quiz_data.get('quiz_style', 'اختيارات 📊'),
+            "quiz_id": current_quiz_id, # آيدي المسابقة من سوبابيس
             "category": cat_name,
             "current_index": i + 1,
-            "total_questions": len(questions)
+            "total_questions": len(questions),
+            # --- أضف السطرين التاليين ضروري جداً لربط الـ Poll ---
+            "raw_q_data": q,         # تخزين بيانات السؤال كاملة
+            "correct_ans": ans       # تأكيد نص الإجابة الصحيحة
         }
         
         # --- [ نظام التلميح العادي المنفصل ] ---
