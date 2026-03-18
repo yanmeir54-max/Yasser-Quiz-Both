@@ -260,31 +260,34 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         fakes = []
         seen_norms = {norm_correct}
 
-        # 1️⃣ [تطهير السؤال واستخراج الجوهر]
-        # قائمة المبعدات (أدوات سؤال، ضمائر، حروف جر، كلمات شائعة)
-        ignored_words = [
-            'ما', 'من', 'اين', 'متى', 'كيف', 'كم', 'لماذا', 'هل', 'ماذا', 'ماهي', 'ماهو',
-            'الذي', 'التي', 'اللذان', 'اللتان', 'الذين', 'هو', 'هي', 'هما', 'هم', 'هن',
-            'على', 'إلى', 'عن', 'في', 'من', 'بين', 'تحت', 'فوق', 'مع', 'هذا', 'هذه',
-            'تسمى', 'تقع فيها', 'يوجد', 'كان', 'يكون', 'اسم', 'كلمة', 'دولة', 'قارة'
-        ]
-        # توحيد قائمة المبعدات لضمان المطابقة
-        ignored_norms = [normalize_arabic(w) for w in ignored_words]
+        # 1️⃣ [رادار القافية - Rhyme Radar] 🎵
+        # نأخذ آخر حرفين من الإجابة الصحيحة (مثل: "يا" في ليبيا، "ان" في لبنان)
+        if len(correct_ans) >= 3:
+            rhyme_suffix = correct_ans[-2:]
+            # نبحث في سوبابيس عن إجابات تنتهي بنفس القافية
+            res_rhyme = supabase.table("bot_questions") \
+                .select("correct_answer") \
+                .ilike("correct_answer", f"%{rhyme_suffix}") \
+                .neq("correct_answer", correct_ans) \
+                .limit(20).execute()
+            
+            for r in res_rhyme.data:
+                opt = str(r['correct_answer']).strip()
+                if normalize_arabic(opt) not in seen_norms:
+                    # فلتر لتقارب الطول لضمان شكل "القافية"
+                    if abs(len(opt) - len(correct_ans)) <= 5:
+                        fakes.append(opt)
+                        seen_norms.add(normalize_arabic(opt))
 
-        q_norm = normalize_arabic(question_text)
-        # استخراج الكلمات التي ليست في قائمة المبعدات وطولها > 3 (تركيز على الأسماء العلم)
-        all_words = re.findall(r'\w+', q_norm)
-        key_words = [w for w in all_words if w not in ignored_norms and len(w) > 3]
-
-        # 2️⃣ المرحلة الأولى: [مغناطيس رأس الإجابة] (نهر، قانون، مدينة...)
+        # 2️⃣ [رادار النوع - Category Head] 🏛️
+        # (نهر، قانون، مدينة، ملك...)
         ans_words = correct_ans.split()
-        if len(ans_words) > 1:
+        if len(ans_words) > 1 and len(fakes) < 3:
             first_word = ans_words[0]
             res_head = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .ilike("correct_answer", f"{first_word}%") \
-                .neq("correct_answer", correct_ans) \
-                .limit(15).execute()
+                .limit(20).execute()
             
             for r in res_head.data:
                 opt = str(r['correct_answer']).strip()
@@ -292,48 +295,48 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                     fakes.append(opt)
                     seen_norms.add(normalize_arabic(opt))
 
-        # 3️⃣ المرحلة الثانية: [الرادار الدلالي - الكلمات المفتاحية]
-        # نبحث في سوبابيس عن الأسئلة التي تحتوي على الأسماء العلم المستخرجة
-        if len(fakes) < 4 and key_words:
-            # نأخذ أهم كلمتين مفتاحيتين (الأكثر طولاً عادة ما تكون هي الاسم العلم)
-            sorted_keys = sorted(key_words, key=len, reverse=True)[:2]
-            or_query = ",".join([f"question_content.ilike.%{k}%" for k in sorted_keys])
+        # 3️⃣ [رادار الأسماء العلم - Keyword Radar] 🎯
+        # استخراج الكلمات الجوهرية من السؤال (مثل: الأناضول)
+        if len(fakes) < 3:
+            ignored = [normalize_arabic(w) for w in ['ما', 'هي', 'اين', 'التي', 'تقع', 'تسمى', 'دولة', 'قارة']]
+            q_words = re.findall(r'\w+', normalize_arabic(question_text))
+            keys = [w for w in q_words if w not in ignored and len(w) > 3]
             
-            res_keys = supabase.table("bot_questions") \
-                .select("correct_answer").or_(or_query).limit(25).execute()
+            if keys:
+                best_key = max(keys, key=len) # نأخذ أطول كلمة (غالباً هي الاسم العلم)
+                res_keys = supabase.table("bot_questions") \
+                    .select("correct_answer") \
+                    .or_(f"question_content.ilike.%{best_key}%,correct_answer.ilike.%{best_key}%") \
+                    .limit(20).execute()
 
-            for r in res_keys.data:
-                opt = str(r['correct_answer']).strip()
-                opt_norm = normalize_arabic(opt)
-                if opt_norm not in seen_norms:
-                    # فلترة ذكية: استبعاد الإجابات الطويلة جداً أو القصيرة جداً مقارنة بالصح
-                    if abs(len(opt) - len(correct_ans)) <= 15:
+                for r in res_keys.data:
+                    opt = str(r['correct_answer']).strip()
+                    if normalize_arabic(opt) not in seen_norms:
                         fakes.append(opt)
-                        seen_norms.add(opt_norm)
+                        seen_norms.add(normalize_arabic(opt))
 
-        # 4️⃣ المرحلة الثالثة: [خطة الطوارئ الذكية] (البحث بالقسم مع فلترة النوع)
+        # 4️⃣ [خطة الطوارئ - القسم المتشابه] 📂
         if len(fakes) < 3:
             res_cat = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .eq("category", category_name) \
-                .limit(15).execute()
-            
+                .limit(10).execute()
             for r in res_cat.data:
-                opt = str(r['correct_answer']).strip()
+                opt = r['correct_answer']
                 if normalize_arabic(opt) not in seen_norms:
-                    # التأكد من توافق "الـ" التعريف لزيادة الذكاء البصري
+                    # نفضل الأسماء التي تبدأ بـ "الـ" إذا كانت الإجابة تبدأ بـ "الـ"
                     if correct_ans.startswith("ال") == opt.startswith("ال"):
                         fakes.append(opt)
                         seen_norms.add(normalize_arabic(opt))
 
-        # 5️⃣ اختيار النهائي
+        # اختيار 3 خيارات متنوعة (قافية + نوع + سياق)
         if len(fakes) >= 3:
             return random.sample(fakes, 3)
         return fakes
 
     except Exception as e:
-        print(f"❌ خطأ في الرادار الذكي: {e}")
-        return []
+        print(f"❌ خطأ الرادار الشامل: {e}")
+        return [] 
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
