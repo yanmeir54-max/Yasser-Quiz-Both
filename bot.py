@@ -55,6 +55,8 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# مخزن مؤقت لربط الـ Polls بالأسئلة (يعمل كـ الرام السريع)
+active_polls = {}
 
 active_quizzes = {}
 cancelled_groups = set() # لحفظ المجموعات التي ضغطت إلغاء مؤقتاً
