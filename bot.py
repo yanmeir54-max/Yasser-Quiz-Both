@@ -201,30 +201,28 @@ async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, al
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
         
 # ==========================================
-# --- [ دالة تسجيل الإجابة في سوبابيس ] ---
+# --- [ دالة تسجيل الإجابة في سوبابيس المحدثة ] ---
 # ==========================================
-async def record_poll_answer_in_db(user_id, q_id, is_correct, response_time, user_name):
+async def record_poll_answer_in_db(answer_data):
+    """
+    تستقبل مصفوفة البيانات الجاهزة وترسلها لجدول answers_log
+    """
     try:
-        # 1. تجهيز البيانات للإدراج
-        # نفترض أن جدولك اسمه 'quiz_results' أو 'user_answers'
-        answer_data = {
-            "user_id": user_id,
-            "question_id": q_id,
-            "is_correct": is_correct,
-            "response_time": round(response_time, 3), # تسجيل 3 أرقام بعد الفاصلة للدقة
-            "user_name": user_name,
-            "created_at": "now()" # توقيت سوبابيس التلقائي
-        }
-
-        # 2. تنفيذ الإرسال لقاعدة البيانات (سوبابيس)
-        res = supabase.table("user_answers").insert(answer_data).execute()
+        # 1. تنفيذ الإرسال لجدول answers_log (الاسم الجديد)
+        # نحن نستخدم الإدراج (insert) لإضافة سجل جديد لكل إجابة
+        res = supabase.table("answers_log").insert(answer_data).execute()
         
-        # 3. طباعة تأكيد في الكونسول (اختياري للتحقق)
-        status = "✅ صح" if is_correct else "❌ خطأ"
-        print(f"🚀 [رصد]: {user_name} | {status} | الوقت: {response_time:.3f}s")
+        # 2. فحص بسيط للتأكد من نجاح العملية (اختياري)
+        if hasattr(res, 'data') and len(res.data) > 0:
+            user = answer_data.get('user_name', 'مجهول')
+            status = "✅ تم الحفظ"
+            print(f"🚀 [DB]: تم تسجيل إجابة {user} بنجاح في سجل الإجابة.")
+        else:
+            print(f"⚠️ تنبيه: تم إرسال البيانات ولكن لم يتم التأكد من الحفظ.")
 
     except Exception as e:
-        print(f"❌ فشل تسجيل الإجابة في سوبابيس: {e}")
+        # في حال وجود خطأ (مثلاً آيدي غير موجود أو مشكلة في الاتصال)
+        print(f"❌ فشل تسجيل الإجابة في answers_log: {e}")
 
 # ==========================================
 # ==========================================
