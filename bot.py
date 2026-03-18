@@ -151,55 +151,60 @@ def get_hybrid_poll_style(q_data, current_index, total_q, cat_name):
 async def send_quiz_master(chat_id, q_data, current_num, total_num, settings, all_questions_list):
     try:
         style = settings.get('quiz_style', 'اختيارات 📊')
+        quiz_db_id = settings.get('quiz_db_id') # هذا هو ID المسابقة في سوبابيس
         
-        # 🎯 1. سحب وتجهيز البيانات الأساسية
         raw_q_text = str(q_data.get('question_content', "")).strip()
         correct_ans = str(q_data.get('correct_answer', "")).strip()
-        cat_name = q_data.get('category') or settings.get('cat_name', 'عام')
-        q_id = q_data.get('id')
+        cat_name = settings.get('cat_name', 'عام')
 
-        # ✂️ 2. تنظيف نص السؤال للمحرك الذكي
-        clean_q_text = re.sub(r'[؟!؟\.،,:]', '', raw_q_text)
-
-        # 3. تحديد النمط (مباشر أو اختيارات)
-        if style == "الكل 📋":
-            actual_mode = random.choice(["مباشرة ⚡", "اختيارات 📊"])
-        else:
-            actual_mode = style
-
-        # --- [ الحالة الأولى: سؤال مباشر (كتابة) ] ---
-        if actual_mode == "مباشرة ⚡":
-            return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
-
-        # --- [ الحالة الثانية: نظام الـ Poll الذكي ] ---
-        else:
-            # 🚀 استدعاء "المغناطيس الراداري" (القافية، الرأس، والتشابه)
+        # --- [ نمط الاختيارات الذكي ] ---
+        if style == "اختيارات 📊":
+            # 1. تجهيز الخيارات بالرادار
+            clean_q_text = re.sub(r'[؟!؟\.،,:]', '', raw_q_text)
             wrong_picks = await get_ultra_smart_options(clean_q_text, cat_name, correct_ans)
             
-            # 5. دمج الإجابة الصحيحة مع التمويهات وخلطها
             final_options = list(wrong_picks) + [correct_ans]
             random.shuffle(final_options) 
-            
-            # 6. تحديد موقع الإجابة الصحيحة (ضروري لنظام الـ Poll)
             correct_id = final_options.index(correct_ans)
 
-            # 7. جلب نص السؤال المنسق من القالب الجديد
-            poll_title = get_hybrid_poll_style(q_data, current_num, total_num, cat_name)
+            # 2. بناء نص السؤال المنسق
+            poll_title = f"[{current_num} من {total_num}]\nاختبار: {cat_name}\n\n❓ {raw_q_text}"
 
-            # 8. الإرسال بنظام الـ Poll الرسمي (الدرجة الثالثة سنفصلها في دالة الإرسال)
-            return await send_hybrid_poll_to_chat(
-                chat_id, 
-                poll_title, 
-                final_options, 
-                correct_id, 
-                correct_ans, 
-                q_id
+            # 3. إرسال الـ Poll الفعلي
+            quiz_msg = await bot.send_poll(
+                chat_id=chat_id,
+                question=poll_title,
+                options=final_options,
+                type='quiz',
+                correct_option_id=correct_id,
+                is_anonymous=False, # ضروري جداً ليعرف البوت من الشخص الذي أجاب
+                explanation=f"✅ الإجابة الصحيحة هي: {correct_ans}"
             )
 
+            # 🔥 [ الوصلة الذهبية ] - توضع هنا مباشرة بعد الإرسال الناجح
+            # نستخدم poll.id كمفتاح لأنه الوحيد الذي يصلنا في الـ Handler
+            active_polls[quiz_msg.poll.id] = {
+                "db_quiz_id": quiz_db_id,      # للربط بجدول active_quizzes
+                "chat_id": chat_id,           # لمعرفة المجموعة التي جاءت منها الإجابة
+                "category": cat_name,         # لتخزين القسم في answers_log
+                "correct_id": correct_id,     # لمقارنة إجابة اللاعب
+                "correct_text": correct_ans,   # لحفظ نص الإجابة
+                "current_num": current_num,   # رقم السؤال الحالي
+                "total_num": total_num,       # إجمالي الأسئلة
+                "start_time": datetime.now(), # لبدء عداد السرعة (الملي ثانية)
+                "q_id": q_data.get('id')      # آيدي السؤال من قاعدة البيانات
+            }
+            
+            print(f"🚀 [رادار]: تم تفعيل مراقبة السؤال {current_num} للـ Poll: {quiz_msg.poll.id}")
+            return quiz_msg
+
+        # --- [ الأنماط الأخرى: مباشر / كتابة ] ---
+        else:
+            return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
+
     except Exception as e:
-        print(f"❌ Error in Master Hybrid Engine: {e}")
+        print(f"❌ Error in Master Engine: {e}")
         return await send_quiz_question(chat_id, q_data, current_num, total_num, settings)
-        
 # ==========================================
 # --- [ دالة تسجيل الإجابة في سوبابيس المحدثة ] ---
 # ==========================================
