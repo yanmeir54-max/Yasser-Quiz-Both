@@ -260,88 +260,108 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         norm_correct = normalize_arabic(correct_ans)
         fakes = []
         seen_norms = {norm_correct}
-
-        # 1️⃣ [تطهير السؤال] - استبعاد الضجيج والتركيز على "الاسم العلم"
-        ignored_words = [
-            'ما', 'من', 'اين', 'متى', 'كيف', 'كم', 'لماذا', 'هل', 'ماذا', 'ماهي', 'ماهو',
-            'الذي', 'التي', 'اللذان', 'اللتان', 'الذين', 'هو', 'هي', 'هما', 'هم', 'هن',
-            'على', 'إلى', 'عن', 'في', 'من', 'بين', 'تحت', 'فوق', 'مع', 'هذا', 'هذه',
-            'تسمى', 'تقع فيها', 'يوجد', 'كان', 'يكون', 'اسم', 'كلمة', 'دولة', 'قارة'
-        ]
-        ignored_norms = [normalize_arabic(w) for w in ignored_words]
-        q_norm = normalize_arabic(question_text)
-        all_words = re.findall(r'\w+', q_norm)
         
-        # استخراج الأسماء العلم (الكلمات الجوهرية)
-        key_words = [w for w in all_words if w not in ignored_norms and len(w) > 3]
+        # تجهيز البيانات
+        ans_words = correct_ans.split()
+        q_norm = normalize_arabic(question_text)
+        
+        # 1️⃣ [نظام الرأس المتخصص]: (نهر، خليج، بحر، قانون، مدينة)
+        # إذا بدأت الإجابة بكلمة مفتاحية قوية، نكتفي بها تماماً لضمان طقم موحد
+        if len(ans_words) > 1:
+            head_word = ans_words[0]
+            if len(head_word) >= 3:
+                res = supabase.table("bot_questions").select("correct_answer") \
+                    .ilike("correct_answer", f"{head_word}%") \
+                    .neq("correct_answer", correct_ans).limit(10).execute()
+                
+                for r in res.data:
+                    opt = str(r['correct_answer']).strip()
+                    if normalize_arabic(opt) not in seen_norms:
+                        fakes.append(opt)
+                        seen_norms.add(normalize_arabic(opt))
+                
+                # شرط الحصانة: إذا وجدنا 3 خيارات من نفس "الرأس"، نخرج فوراً لمنع الاختلاط
+                if len(fakes) >= 3: return random.sample(fakes, 3)
 
-        # 2️⃣ [رادار القافية - Rhyme Radar] 🎵 (الأولوية القصوى)
-        # إذا كانت الإجابة "ليبيا"، يبحث عن كل ما ينتهي بـ "يا"
-        if len(correct_ans) >= 3:
-            rhyme_suffix = correct_ans[-2:]
-            res_rhyme = supabase.table("bot_questions") \
-                .select("correct_answer") \
-                .ilike("correct_answer", f"%{rhyme_suffix}") \
-                .neq("correct_answer", correct_ans) \
-                .limit(20).execute()
+        # 2️⃣ [نظام قافية الكلمة الواحدة]: (أول حرفين + آخر حرفين)
+        # إذا كانت الإجابة كلمة واحدة (آسيا، عمان)، يبحث عن تطابق صوتي في البداية والنهاية
+        if len(ans_words) == 1 and len(correct_ans) >= 4:
+            start_bit = correct_ans[:2]
+            end_bit = correct_ans[-2:]
+            res = supabase.table("bot_questions").select("correct_answer") \
+                .or_(f"correct_answer.ilike.{start_bit}%,correct_answer.ilike.%{end_bit}") \
+                .neq("correct_answer", correct_ans).limit(15).execute()
             
-            for r in res_rhyme.data:
+            for r in res.data:
+                opt = str(r['correct_answer']).strip()
+                if normalize_arabic(opt) not in seen_norms and len(opt.split()) == 1:
+                    if abs(len(opt) - len(correct_ans)) <= 4:
+                        fakes.append(opt)
+                        seen_norms.add(normalize_arabic(opt))
+            
+            if len(fakes) >= 3: return random.sample(fakes, 3)
+
+        # 3️⃣ [نظام التشظي للإجابات الطويلة]: (أول 3 حروف + آخر 3 حروف)
+        if len(correct_ans) > 7:
+            s1, s2 = correct_ans[:3], correct_ans[-3:]
+            res = supabase.table("bot_questions").select("correct_answer") \
+                .or_(f"correct_answer.ilike.%{s1}%,correct_answer.ilike.%{s2}%").limit(10).execute()
+            
+            for r in res.data:
                 opt = str(r['correct_answer']).strip()
                 if normalize_arabic(opt) not in seen_norms:
-                    # شرط التناسق البصري (تقارب الطول)
-                    if abs(len(opt) - len(correct_ans)) <= 6:
+                    fakes.append(opt)
+                    seen_norms.add(normalize_arabic(opt))
+            
+            if len(fakes) >= 3: return random.sample(fakes, 3)
+
+        # 4️⃣ [رادار نوع السؤال]: (ما هي الدولة، ما هي القارة)
+        # يبحث عن أسئلة تبدأ بنفس الصيغة ويجلب إجاباتها
+        q_start = " ".join(re.findall(r'\w+', q_norm)[:3]) # أول 3 كلمات من السؤال
+        if q_start:
+            res = supabase.table("bot_questions").select("correct_answer") \
+                .ilike("question_content", f"{q_start}%").limit(15).execute()
+            
+            for r in res.data:
+                opt = str(r['correct_answer']).strip()
+                if normalize_arabic(opt) not in seen_norms:
+                    fakes.append(opt)
+                    seen_norms.add(normalize_arabic(opt))
+            
+            if len(fakes) >= 3: return random.sample(fakes, 3)
+
+        # 5️⃣ [فحص الكلمات المفتاحية الذكي]: (البداية والنهاية للسؤال)
+        q_words = re.findall(r'\w+', q_norm)
+        if len(q_words) >= 4:
+            # نستبعد الحشو ونأخذ كلمات الجوهر
+            ignored = [normalize_arabic(w) for w in ['ما', 'هي', 'اين', 'التي', 'الذي']]
+            keys = [w for w in q_words if w not in ignored and len(w) > 3]
+            if keys:
+                best_k = keys[0] if len(keys) == 1 else f"{keys[0]},{keys[-1]}"
+                res = supabase.table("bot_questions").select("correct_answer") \
+                    .or_(f"question_content.ilike.%{keys[0]}%,question_content.ilike.%{keys[-1]}%").limit(10).execute()
+                
+                for r in res.data:
+                    opt = str(r['correct_answer']).strip()
+                    if normalize_arabic(opt) not in seen_norms:
                         fakes.append(opt)
                         seen_norms.add(normalize_arabic(opt))
 
-        # 3️⃣ [مغناطيس النوع - Category Head] 🏛️
-        # (قانون -> قانون، نهر -> نهر)
-        ans_words = correct_ans.split()
-        if len(ans_words) > 1 and len(fakes) < 3:
-            first_word = ans_words[0]
-            res_head = supabase.table("bot_questions") \
-                .select("correct_answer") \
-                .ilike("correct_answer", f"{first_word}%") \
-                .limit(10).execute()
-            
-            for r in res_head.data:
-                opt = str(r['correct_answer']).strip()
-                if normalize_arabic(opt) not in seen_norms:
-                    fakes.append(opt)
-                    seen_norms.add(normalize_arabic(opt))
-
-        # 4️⃣ [الرادار الدلالي] 🎯 (البحث بالاسم العلم مثل: الأناضول)
-        if len(fakes) < 3 and key_words:
-            # نأخذ أطول كلمة في السؤال كـ "مفتاح ذهبي"
-            best_key = max(key_words, key=len)
-            res_keys = supabase.table("bot_questions") \
-                .select("correct_answer") \
-                .or_(f"question_content.ilike.%{best_key}%,correct_answer.ilike.%{best_key}%") \
-                .limit(15).execute()
-
-            for r in res_keys.data:
-                opt = str(r['correct_answer']).strip()
-                if normalize_arabic(opt) not in seen_norms:
-                    fakes.append(opt)
-                    seen_norms.add(normalize_arabic(opt))
-
-        # 5️⃣ [خطة الطوارئ] 📂 (نفس القسم مع مطابقة الـ التعريف)
+        # 6️⃣ [خطة الطوارئ]: إذا لم يكتمل العدد، نسحب من نفس القسم مع شرط "الـ" التعريف
         if len(fakes) < 3:
-            res_cat = supabase.table("bot_questions") \
-                .select("correct_answer") \
-                .eq("category", category_name) \
-                .limit(10).execute()
-            for r in res_cat.data:
+            res = supabase.table("bot_questions").select("correct_answer") \
+                .eq("category", category_name).limit(10).execute()
+            for r in res.data:
                 opt = str(r['correct_answer']).strip()
                 if normalize_arabic(opt) not in seen_norms:
                     if correct_ans.startswith("ال") == opt.startswith("ال"):
                         fakes.append(opt)
                         seen_norms.add(normalize_arabic(opt))
 
-        # 🚀 رصد الإجابات: نأخذ أول 3 خيارات قوية تم العثور عليها
         return random.sample(fakes, min(len(fakes), 3))
 
     except Exception as e:
-        print(f"❌ خطأ الرادار: {e}")
+        print(f"❌ خطأ في المحرك الذري: {e}")
         return []
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
