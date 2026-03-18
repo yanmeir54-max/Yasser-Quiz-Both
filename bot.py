@@ -342,6 +342,40 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         print(f"❌ خطأ في المحرك الذري المطور: {e}")
         return []
 # ==========================================
+# 6. دالة الإرسال النهائية (الهجين الذكي)
+# ==========================================
+async def send_hybrid_poll_to_chat(chat_id, title, options, correct_id, correct_text, q_id):
+    """
+    إرسال الـ Poll الفعلي وتسجيله في الرام للرصد اللحظي
+    """
+    try:
+        # 🚀 1. إرسال الاستفتاء الرسمي لتليجرام
+        quiz_msg = await bot.send_poll(
+            chat_id=chat_id,
+            question=title,           # النص المنسق (رقم السؤال + القسم + السؤال)
+            options=options,         # قائمة الخيارات (المغناطيس الراداري)
+            type='quiz',             # وضع الاختبار (إجابة واحدة صحيحة)
+            correct_option_id=correct_id, # موقع الإجابة الصحيحة
+            is_anonymous=False,      # ضروري جداً لرصد "من سبق لبق"
+            explanation=f"✅ الإجابة الصحيحة هي: {correct_text}", # تظهر للمخطئ
+            explanation_parse_mode='HTML'
+        )
+
+        # 🚀 2. تسجيل الـ Poll في "ذاكرة الرصد السريعة" (الرام)
+        # نربط معرف الـ Poll (poll.id) ببيانات السؤال لكي نعرفه عندما يضغط اللاعب
+        active_polls[quiz_msg.poll.id] = {
+            "q_id": q_id,
+            "correct_id": correct_id,
+            "correct_text": correct_text,
+            "start_time": datetime.now() # لحساب سرعة الإجابة بالملي ثانية
+        }
+        
+        return quiz_msg
+
+    except Exception as e:
+        print(f"❌ فشل إرسال الـ Poll الهجين: {e}")
+        return None
+# ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
 # ==========================================
 async def send_creative_results(chat_id, correct_ans, winners, group_scores, is_public=False, mode="السرعة ⚡", group_names=None):
