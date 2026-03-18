@@ -251,7 +251,6 @@ def normalize_arabic(text):
     text = re.sub(r'ى', 'ي', text)
     text = re.sub(r'[\u064B-\u0652]', '', text)
     return text
-
 # ==========================================
 # --- [ دالة خلط الاختيارات (المغناطيس الفولاذي المطور) ] ---
 # ==========================================
@@ -259,19 +258,33 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
     try:
         norm_correct = normalize_arabic(correct_ans)
         fakes = []
-        seen_norms = {norm_correct} # لمنع التكرار
+        seen_norms = {norm_correct}
 
-        # 🚀 المرحلة 1: [مغناطيس رأس الإجابة] (نهر، قانون، ميناء...)
-        # إذا كانت الإجابة أكثر من كلمة، نبحث عن إجابات تبدأ بنفس الكلمة الأولى
+        # 1️⃣ [تطهير السؤال واستخراج الجوهر]
+        # قائمة المبعدات (أدوات سؤال، ضمائر، حروف جر، كلمات شائعة)
+        ignored_words = [
+            'ما', 'من', 'اين', 'متى', 'كيف', 'كم', 'لماذا', 'هل', 'ماذا', 'ماهي', 'ماهو',
+            'الذي', 'التي', 'اللذان', 'اللتان', 'الذين', 'هو', 'هي', 'هما', 'هم', 'هن',
+            'على', 'إلى', 'عن', 'في', 'من', 'بين', 'تحت', 'فوق', 'مع', 'هذا', 'هذه',
+            'تسمى', 'تقع فيها', 'يوجد', 'كان', 'يكون', 'اسم', 'كلمة', 'دولة', 'قارة'
+        ]
+        # توحيد قائمة المبعدات لضمان المطابقة
+        ignored_norms = [normalize_arabic(w) for w in ignored_words]
+
+        q_norm = normalize_arabic(question_text)
+        # استخراج الكلمات التي ليست في قائمة المبعدات وطولها > 3 (تركيز على الأسماء العلم)
+        all_words = re.findall(r'\w+', q_norm)
+        key_words = [w for w in all_words if w not in ignored_norms and len(w) > 3]
+
+        # 2️⃣ المرحلة الأولى: [مغناطيس رأس الإجابة] (نهر، قانون، مدينة...)
         ans_words = correct_ans.split()
         if len(ans_words) > 1:
             first_word = ans_words[0]
-            # نجلب إجابات تبدأ بنفس الكلمة من عمود correct_answer
             res_head = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .ilike("correct_answer", f"{first_word}%") \
                 .neq("correct_answer", correct_ans) \
-                .limit(20).execute()
+                .limit(15).execute()
             
             for r in res_head.data:
                 opt = str(r['correct_answer']).strip()
@@ -279,47 +292,47 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                     fakes.append(opt)
                     seen_norms.add(normalize_arabic(opt))
 
-        # 🚀 المرحلة 2: [مغناطيس سياق السؤال] (إذا نحتاج خيارات أكثر)
-        if len(fakes) < 3:
-            q_norm = normalize_arabic(question_text)
-            words = re.findall(r'\w+', q_norm)
-            junk = [normalize_arabic(w) for w in ['ما', 'من', 'اين', 'كم', 'ماهي', 'ماهو', 'لماذا', 'كم', 'منهو', 'متى', 'هي', 'هو', 'كيف']]
-            strong_keys = [w for w in words if w not in junk and len(w) > 3]
+        # 3️⃣ المرحلة الثانية: [الرادار الدلالي - الكلمات المفتاحية]
+        # نبحث في سوبابيس عن الأسئلة التي تحتوي على الأسماء العلم المستخرجة
+        if len(fakes) < 4 and key_words:
+            # نأخذ أهم كلمتين مفتاحيتين (الأكثر طولاً عادة ما تكون هي الاسم العلم)
+            sorted_keys = sorted(key_words, key=len, reverse=True)[:2]
+            or_query = ",".join([f"question_content.ilike.%{k}%" for k in sorted_keys])
+            
+            res_keys = supabase.table("bot_questions") \
+                .select("correct_answer").or_(or_query).limit(25).execute()
 
-            if strong_keys:
-                # البحث باستخدام أول وآخر كلمة قوية في نص السؤال
-                search_keys = list(set([strong_keys[0], strong_keys[-1]]))
-                or_query = ",".join([f"question_content.ilike.%{k}%" for k in search_keys])
-                
-                res_context = supabase.table("bot_questions") \
-                    .select("correct_answer").or_(or_query).limit(30).execute()
+            for r in res_keys.data:
+                opt = str(r['correct_answer']).strip()
+                opt_norm = normalize_arabic(opt)
+                if opt_norm not in seen_norms:
+                    # فلترة ذكية: استبعاد الإجابات الطويلة جداً أو القصيرة جداً مقارنة بالصح
+                    if abs(len(opt) - len(correct_ans)) <= 15:
+                        fakes.append(opt)
+                        seen_norms.add(opt_norm)
 
-                for r in res_context.data:
-                    opt = str(r['correct_answer']).strip()
-                    # فلترة بالمسطرة (الطول) والتوحيد
-                    if normalize_arabic(opt) not in seen_norms:
-                        if abs(len(opt) - len(correct_ans)) <= 12:
-                            fakes.append(opt)
-                            seen_norms.add(normalize_arabic(opt))
-
-        # 🚀 المرحلة 3: [خطة الطوارئ] (البحث بالقسم)
+        # 4️⃣ المرحلة الثالثة: [خطة الطوارئ الذكية] (البحث بالقسم مع فلترة النوع)
         if len(fakes) < 3:
             res_cat = supabase.table("bot_questions") \
                 .select("correct_answer") \
                 .eq("category", category_name) \
-                .neq("correct_answer", correct_ans).limit(10).execute()
+                .limit(15).execute()
             
             for r in res_cat.data:
                 opt = str(r['correct_answer']).strip()
                 if normalize_arabic(opt) not in seen_norms:
-                    fakes.append(opt)
-                    seen_norms.add(normalize_arabic(opt))
+                    # التأكد من توافق "الـ" التعريف لزيادة الذكاء البصري
+                    if correct_ans.startswith("ال") == opt.startswith("ال"):
+                        fakes.append(opt)
+                        seen_norms.add(normalize_arabic(opt))
 
-        # العودة بـ 3 خيارات عشوائية مما تم جمعه
-        return random.sample(fakes, min(len(fakes), 3))
+        # 5️⃣ اختيار النهائي
+        if len(fakes) >= 3:
+            return random.sample(fakes, 3)
+        return fakes
 
     except Exception as e:
-        print(f"❌ خطأ المغناطيس الشامل: {e}")
+        print(f"❌ خطأ في الرادار الذكي: {e}")
         return []
 # ==========================================
 # --- [ 2. بداية الدوال المساعدة قالب الاجابات  ] ---
