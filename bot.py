@@ -1408,8 +1408,7 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         await asyncio.sleep(5)
         await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 🚀 [ الخطوة الجوهرية 6: الانطلاق الفوري والتسجيل ] 🚀
-        # تصفية المجموعات التي لم تضغط على زر الإلغاء
+        # 1. تصفية المجموعات التي لم تضغط على زر الإلغاء
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
         
         if final_groups:
@@ -1425,12 +1424,33 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             # ب. ⚡ [ تشغيل المحرك العالمي فوراً ] ⚡
-            # نمرر final_groups والمحرك سيقوم بالباقي (إنشاء السجل + ربط المشاركين)
+            # المحرك سيتولى (Insert active_quizzes) ثم (Insert quiz_participants)
             asyncio.create_task(
                 engine_global_broadcast(final_groups, q_data, owner_name)
             )
             logging.info(f"📡 تم استدعاء المحرك لـ {len(final_groups)} مجموعة.")
+
+        else:
+            # 2. [ القفل ] في حال تم إلغاء المسابقة من جميع المجموعات
+            logging.warning("⚠️ تم إلغاء الإذاعة: لا توجد مجموعات مشاركة.")
+            await bot.send_message(owner_id, "⚠️ تم إلغاء المسابقة لأن جميع المجموعات المختارة قامت بالإلغاء.")
+
+        # 3. [ التنظيف النهائي ] 
+        # ننتظر ثواني قليلة ليتسنى للناس رؤية كلمة "تم الانطلاق" ثم نحذف رسائل الإعلان
+        await asyncio.sleep(3)
+        for cid, mid in group_msgs.items():
+            try:
+                await bot.delete_message(cid, mid)
+            except Exception as e:
+                logging.debug(f"Could not delete message {mid} in {cid}: {e}")
+
+    except Exception as e:
+        # 4. [ قفل الـ Try الكبير ]
+        logging.error(f"🚨 خطأ حرج في نظام الإذاعة الشامل: {e}")
+        await bot.send_message(owner_id, f"❌ حدث خطأ تقني أثناء محاولة إطلاق الإذاعة: {e}")
         
+        # 🚀 [ الخطوة الجوهرية 6: الانطلاق الفوري والتسجيل ] 🚀
+
 # تصفية المجموعات التي لم تضغط على زر الإلغاء
      except Exception as e:
                 logging.error(f"🚨 Error starting engine: {e}")
