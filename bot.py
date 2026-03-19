@@ -1356,37 +1356,29 @@ async def run_visual_countdown(group_msgs, kb, base_info):
 
 async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id: int):
     try:
-        # 1. جلب بيانات المسابقة والمجموعات المستهدفة
+        # 1. المندوب يجلب بيانات المسابقة (قراءة فقط من saved_quizzes)
         res_q = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
-        q = res_q.data
-        if not q: 
-            return await c.answer("❌ تعذر جلب بيانات المسابقة من السجل")
+        q_data = res_q.data
+        if not q_data: return await c.answer("❌ تعذر جلب بيانات المسابقة")
 
+        # 2. المندوب يجلب المجموعات النشطة من groups_hub ليوزع عليها الإعلان
         groups_res = supabase.table("groups_hub").select("group_id").eq("status", "active").execute()
-        if not groups_res.data: 
-            return await c.answer("⚠️ لا توجد مجموعات نشطة حالياً!")
+        if not groups_res.data: return await c.answer("⚠️ لا توجد مجموعات نشطة!")
 
         all_chats = [g['group_id'] for g in groups_res.data]
-        cancelled_groups.clear() # تصفير قائمة الإلغاء للمسابقة الجديدة
+        cancelled_groups.clear() 
 
-        # 2. تجهيز بيانات الإعلان الموحد
-        quiz_name = q.get('quiz_name', 'تحدي جديد')
-        q_count = q.get('questions_count', 10)
-        q_mode = q.get('mode', 'السرعة ⚡')
-        cat_info = q.get('category_name', 'عام') 
-        
+        owner_name = c.from_user.first_name
         base_info = (
             f"**إعلان: مسابقة عامة منطلقة !** ™️\n"
             f"━━━━━━━━━━━━━━\n"
-            f"🏆 المسابقة: **{quiz_name}**\n"
-            f"📂 القسم: **{cat_info}**\n"
-            f"🔢 عدد الأسئلة: **{q_count}**\n"
-            f"⚙️ النوع: **{q_mode}**\n"
-            f"👤 المنظم: **{c.from_user.first_name}**\n"
+            f"🏆 المسابقة: **{q_data.get('quiz_name', 'تحدي جديد')}**\n"
+            f"📂 القسم: **{q_data.get('category_name', 'عام')}**\n"
+            f"👤 المنظم: **{owner_name}**\n"
             f"━━━━━━━━━━━━━━"
         )
 
-        # 3. إرسال إشعارات التحضير مع زر الإلغاء
+        # 3. المندوب يوزع رسائل التحضير (فتح باب الانضمام)
         group_msgs = {}
         kb = InlineKeyboardMarkup().add(
             InlineKeyboardButton("🚫 إلغاء المسابقة في مجموعتنا", callback_data=f"cancel_quiz_{quiz_id}")
@@ -1394,60 +1386,46 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
 
         for cid in all_chats:
             try:
-                msg = await bot.send_message(
-                    cid, 
-                    f"{base_info}\n\n🛰️ **جاري تحضير الإذاعة العالمية...**", 
-                    parse_mode="Markdown", 
-                    reply_markup=kb
-                )
+                msg = await bot.send_message(cid, f"{base_info}\n\n🛰️ **جاري تحضير الإذاعة العالمية...**", 
+                                           parse_mode="Markdown", reply_markup=kb)
                 group_msgs[cid] = msg.message_id
-            except: 
-                continue
+            except: continue
 
-        # 4. مرحلة الانتظار والعد التنازلي (البصري)
+        # 4. مرحلة الانتظار (فرصة للمجموعات لتقرر البقاء أو الرفض)
         await asyncio.sleep(5)
-        await run_visual_countdown(group_msgs, kb, base_info)
+        # هنا يتم تشغيل العد التنازلي البصري (اختياري)
+        # await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 1. تصفية المجموعات التي لم تضغط على زر الإلغاء
+        # 🚀 [ المرحلة الجوهرية: الفرز ] 🚀
+        # المندوب يحدد القائمة النهائية للراغبين باللعب
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
-        
+
         if final_groups:
-            # أ. تحديث الحالة البصرية (انطلقنا)
+            # تحديث بَصري للمجموعات المنضمة
             launch_tasks = [
-                bot.edit_message_text(
-                    f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", 
-                    cid, 
-                    group_msgs[cid], 
-                    parse_mode="Markdown"
-                ) for cid in final_groups
+                bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! جاري التسجيل..**", cid, mid, parse_mode="Markdown") 
+                for cid, mid in group_msgs.items() if cid in final_groups
             ]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
-            # ب. ⚡ [ تشغيل المحرك العالمي فوراً ] ⚡
-            # المحرك سيتولى (Insert active_quizzes) ثم (Insert quiz_participants)
+            # ⚡ [ تسليم المهمة للمحرك ] ⚡
+            # المندوب يرفع "القلم والورقة" (final_groups) للمحرك ليبدأ (المسجل + المشرف) عملهم
             asyncio.create_task(
                 engine_global_broadcast(final_groups, q_data, owner_name)
             )
-            logging.info(f"📡 تم استدعاء المحرك لـ {len(final_groups)} مجموعة.")
+            logging.info(f"📡 المندوب سلم {len(final_groups)} مجموعة للمحرك.")
 
         else:
-            # 2. [ القفل ] في حال تم إلغاء المسابقة من جميع المجموعات
-            logging.warning("⚠️ تم إلغاء الإذاعة: لا توجد مجموعات مشاركة.")
-            await bot.send_message(owner_id, "⚠️ تم إلغاء المسابقة لأن جميع المجموعات المختارة قامت بالإلغاء.")
+            await bot.send_message(owner_id, "⚠️ تم إلغاء المسابقة لعدم وجود مجموعات منضمة.")
 
-        # 3. [ التنظيف النهائي ] 
-        # ننتظر ثواني قليلة ليتسنى للناس رؤية كلمة "تم الانطلاق" ثم نحذف رسائل الإعلان
-        await asyncio.sleep(3)
+        # 7. التنظيف النهائي لرسائل الإعلان
+        await asyncio.sleep(2)
         for cid, mid in group_msgs.items():
-            try:
-                await bot.delete_message(cid, mid)
-            except Exception as e:
-                logging.debug(f"Could not delete message {mid} in {cid}: {e}")
+            try: await bot.delete_message(cid, mid)
+            except: pass
 
     except Exception as e:
-        # 4. [ قفل الـ Try الكبير ]
-        logging.error(f"🚨 خطأ حرج في نظام الإذاعة الشامل: {e}")
-        await bot.send_message(owner_id, f"❌ حدث خطأ تقني أثناء محاولة إطلاق الإذاعة: {e}")
+        logging.error(f"🚨 General Broadcast Error: {e}")
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 async def get_user_full_data(user_id: int):
