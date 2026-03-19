@@ -1356,7 +1356,7 @@ async def run_visual_countdown(group_msgs, kb, base_info):
 
 async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id: int):
     try:
-        # 1. جلب بيانات المسابقة والمجموعات المستهدفة
+        # 1. جلب بيانات المسابقة والمجموعات
         res_q = supabase.table("saved_quizzes").select("*").eq("id", quiz_id).single().execute()
         q = res_q.data
         if not q: return await c.answer("❌ تعذر جلب بيانات المسابقة")
@@ -1367,7 +1367,7 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         all_chats = [g['group_id'] for g in groups_res.data]
         cancelled_groups.clear() 
 
-        # 2. تجهيز معلومات العرض (القسم يظهر هنا في القالب البصري فقط)
+        # 2. تجهيز نص الإعلان الثابت
         quiz_name = q.get('quiz_name', 'تحدي جديد')
         q_count = q.get('questions_count', 10)
         q_mode = q.get('mode', 'السرعة ⚡')
@@ -1384,7 +1384,7 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
             f"━━━━━━━━━━━━━━"
         )
 
-        # 3. إرسال رسائل التحضير الأولية
+        # 3. إرسال رسائل التحضير الأولية لكل المجموعات
         group_msgs = {}
         kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🚫 إلغاء المسابقة في مجموعتنا", callback_data=f"cancel_quiz_{quiz_id}"))
 
@@ -1394,38 +1394,52 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
                 group_msgs[cid] = msg.message_id
             except: continue
 
-        # 4. مراحل الانتظار والعد التنازلي
+        # 4. المرحلة الأولى: انتظار هادئ (5 ثوانٍ)
         await asyncio.sleep(5)
+
+        # 5. المرحلة الثانية: العد التنازلي البصري (10 ثوانٍ)
         await run_visual_countdown(group_msgs, kb, base_info)
 
-        # 🚀 [ الخطوة الجوهرية 6: التصفية فقط ] 🚀
+        # 🚀 [ الخطوة الجوهرية 6: التصفية وتسجيل البيانات ] 🚀
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
-
+        
         if final_groups:
-            # تحديث الحالة البصرية للمجموعات التي أكدت البقاء في المسابقة
-            launch_tasks = [
-                bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") 
-                for cid, mid in group_msgs.items() if cid in final_groups
-            ]
+            # تحديث الحالة البصرية قبل المحرك مباشرة
+            launch_tasks = [bot.edit_message_text(f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", cid, mid, parse_mode="Markdown") for cid, mid in group_msgs.items() if cid in final_groups]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             try:
-                # 🛑 ملاحظة: تم حذف جميع عمليات supabase.insert من هنا تماماً
-                # المحرك (Engine) هو المسؤول الوحيد عن إنشاء السجل الرقمي وربط المشاركين
+                # أ. إنشاء السجل الرقمي في سوبابيس (إلزامي للترتيب العالمي)
+                active_res = supabase.table("active_quizzes").insert({
+                    "quiz_name": quiz_name,
+                    "created_by": owner_id, 
+                    "is_global": True,
+                    "is_active": True,
+                    "total_questions": q_count,
+                    "participants_ids": final_groups 
+                }).execute()
                 
+                if not active_res.data:
+                    raise Exception("فشل إنشاء سجل المسابقة")
+
+                new_quiz_db_id = active_res.data[0]['id']
+
+                # ب. تسجيل المشاركين (الحبل السري)
+                participant_data = [{"quiz_id": new_quiz_db_id, "chat_id": cid} for cid in final_groups]
+                supabase.table("quiz_participants").insert(participant_data).execute()
+
                 # ج. استدعاء المحرك العالمي لبدء بث الأسئلة
-                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", quiz_id)
+                await engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", new_quiz_db_id)
 
-            except Exception as e:
-                logging.error(f"🚨 Error starting engine: {e}")
-                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
-
-        # 7. التنظيف النهائي لرسائل الإعلان لجميع المجموعات
+            except Exception as db_err:
+                logging.error(f"❌ خطأ قاعدة البيانات: {db_err}")
+                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء التسجيل الرقمي: {db_err}")
+        
+        # 7. التنظيف النهائي لرسائل الإعلان
         for cid, mid in group_msgs.items():
-            try: 
-                await bot.delete_message(cid, mid)
-            except: 
-                pass
+            try: await bot.delete_message(cid, mid)
+            except: pass
+
     except Exception as e:
         logging.error(f"🚨 General Broadcast Error: {e}")
         
