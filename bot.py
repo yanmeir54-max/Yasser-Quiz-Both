@@ -1408,11 +1408,9 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
             ]
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
-            # ⚡ [ تسليم المهمة للمحرك ] ⚡
-            # المندوب يرفع "القلم والورقة" (final_groups) للمحرك ليبدأ (المسجل + المشرف) عملهم
-            asyncio.create_task(
-                engine_global_broadcast(final_groups, q_data, owner_name)
-            )
+            # أضف الـ ID يدوياً قبل إرساله للمحرك لضمان عدم ضياعه
+            q_data['owner_id'] = c.from_user.id 
+            asyncio.create_task(engine_global_broadcast(final_groups, q_data, owner_name))
             logging.info(f"📡 المندوب سلم {len(final_groups)} مجموعة للمحرك.")
 
         else:
@@ -4238,17 +4236,20 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         selected_questions = pool[:count] 
         total_q = len(selected_questions)
 
-        # 🟢 [ الخطوة 1: المشرف ] إنشاء سجل المسابقة المركزي في active_quizzes (الأب)
+        # 🟢 [ الخطوة 1: المشرف ] إنشاء سجل المسابقة المركزي
         try:
+            # نتحقق من وجود owner_id، وإذا لم يوجد نستخدم 0 أو رقم ثابت لتجنب الـ NULL
+            creator_id = quiz_data.get('owner_id') or quiz_data.get('created_by') or 0
+            
             quiz_entry = supabase.table("active_quizzes").insert({
                 "quiz_name": f"إذاعة {owner_name}",
-                "created_by": quiz_data.get('owner_id'), 
+                "created_by": creator_id,  # تأكدنا أن القيمة ليست NULL
                 "is_global": True,
                 "is_active": True,
                 "total_questions": total_q,
                 "category_name": selected_questions[0].get('categories', {}).get('name', 'عام') if not is_bot else "بوت"
             }).execute()
-            
+
             if quiz_entry.data:
                 current_quiz_db_id = quiz_entry.data[0]['id']
                 logging.info(f"✅ سجل active_quizzes جاهز ID: {current_quiz_db_id}")
