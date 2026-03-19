@@ -3983,6 +3983,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "is_global": (engine_type == "bot"),
             "is_active": True,
             "category_name": main_cat
+            "quiz_type": "private" 
         }).execute()
         
         if quiz_reg.data:
@@ -4276,7 +4277,9 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                 "is_active": True,
                 "participants_ids": [group_names_map.get(c, str(c)) for c in chats_to_broadcast], # 👈 استخدام الخريطة هنا
                 "total_questions": total_q,
+                "quiz_type": public,
                 "category_name": selected_questions[0].get('categories', {}).get('name', 'عام') if not is_bot else "بوت"
+                
             }).execute()
 
             if quiz_entry.data:
