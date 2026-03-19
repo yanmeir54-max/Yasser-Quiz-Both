@@ -4183,9 +4183,21 @@ async def run_countdown(chat_id):
 # 3️⃣ المحرك الرئيسي الموحد (نسخة ياسر المطورة 2026)
 # ✅ السطر الجديد (أضف المتغير الرابع):
 async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_db_id=None):
-    # 1. [ المندوب سلم القائمة ] - تجهيز وتنظيف القائمة
+    # 1. [ المندوب سلم القائمة ]
     input_ids = chat_ids if isinstance(chat_ids, list) else [chat_ids]
     all_chats = list(set(input_ids))
+    
+    # --- [ أ ] تعريف الخرائط الناقصة لضمان عدم حدوث Error ---
+    group_names_map = {} # 👈 هذا هو السطر اللي كان ناقص وسبب الخطأ
+    messages_to_delete = []
+
+    # جلب أسماء المجموعات لكي نستخدمها في "الكشوفات" (answers_log)
+    for cid in all_chats:
+        try:
+            chat_info = await bot.get_chat(cid)
+            group_names_map[cid] = chat_info.title or "مجموعة مجهولة"
+        except:
+            group_names_map[cid] = "مجموعة خاصة"
 
     if not all_chats:
         logging.error("⚠️ لا توجد مجموعات صالحة للبث.")
@@ -4248,6 +4260,7 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                 "created_by": creator_id,  # تأكدنا أن القيمة ليست NULL
                 "is_global": True,
                 "is_active": True,
+                "participants_ids": [group_names_map.get(c, str(c)) for c in chats_to_broadcast], # 👈 استخدام الخريطة هنا
                 "total_questions": total_q,
                 "category_name": selected_questions[0].get('categories', {}).get('name', 'عام') if not is_bot else "بوت"
             }).execute()
