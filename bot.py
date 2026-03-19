@@ -4331,7 +4331,8 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                     'is_public': True
                 }) for cid in chats_to_broadcast
             ]
-            await asyncio.gather(*send_tasks, return_exceptions=True)
+            # تنفيذ البث الجماعي (16 مسافة)
+            q_msgs = await asyncio.gather(*send_tasks, return_exceptions=True)
 
             for idx, m in enumerate(q_msgs):
                 if isinstance(m, types.Message):
