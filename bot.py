@@ -4235,7 +4235,9 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         count = int(quiz_data.get('questions_count', 10))
         selected_questions = pool[:count] 
         total_q = len(selected_questions)
-
+        group_scores = {cid: {} for cid in all_chats}
+        messages_to_delete = {cid: [] for cid in all_chats}
+        results_to_delete = {cid: [] for cid in all_chats}
         # 🟢 [ الخطوة 1: المشرف ] إنشاء سجل المسابقة المركزي
         try:
             # نتحقق من وجود owner_id، وإذا لم يوجد نستخدم 0 أو رقم ثابت لتجنب الـ NULL
