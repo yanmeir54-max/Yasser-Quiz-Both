@@ -4185,49 +4185,51 @@ async def run_countdown(chat_id):
 # 3️⃣ المحرك الرئيسي الموحد (نسخة ياسر المطورة 2026)
 # ✅ السطر الجديد (أضف المتغير الرابع):
 async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_db_id=None):
-    # 1. تجهيز القائمة الأولية
+    # 1. [ المندوب سلم القائمة ] - تجهيز وتنظيف القائمة
     input_ids = chat_ids if isinstance(chat_ids, list) else [chat_ids]
     all_chats = list(set(input_ids))
 
-    if not all_chats: return
+    if not all_chats:
+        logging.error("⚠️ لا توجد مجموعات صالحة للبث.")
+        return
 
-    # --- [ ب ] نظام الفلترة الذكي ---
-    # نحدد فقط المجموعات الجاهزة للاستقبال حالياً
+    # --- [ ب ] نظام الفلترة الذكي لضمان عدم تداخل المسابقات ---
     chats_to_broadcast = []
     for cid in all_chats:
         is_busy = (cid in active_broadcasts) or (cid in active_quizzes and active_quizzes[cid].get('active'))
-        
         if is_busy:
-            logging.warning(f"⚠️ تخطي المجموعة {cid}: لديها مسابقة نشطة.")
+            logging.warning(f"⚠️ تخطي المجموعة {cid}: لديها مسابقة نشطة بالفعل.")
             continue 
             
         chats_to_broadcast.append(cid)
-        active_broadcasts.add(cid)
+        active_broadcasts.add(cid) # حجز المجموعة في الذاكرة لمنع أي تداخل
 
     if not chats_to_broadcast:
         logging.error("🚫 جميع المجموعات المستهدفة مشغولة حالياً.")
         return
 
-    # ✅ استكمال العمل بالمجموعات المفلترة فقط
-    logging.info(f"📡 تم حجز {len(chats_to_broadcast)} مجموعة لبدء الإذاعة.")
+    logging.info(f"📡 تم حجز {len(chats_to_broadcast)} مجموعة لبدء الإذاعة العالمية.")
 
     try:
-        # --- [ ج ] جلب وتجهيز الأسئلة ---
+        # --- [ ج ] جلب وتجهيز الأسئلة من المخزن ---
         raw_cats = quiz_data.get('cats', [])
         if isinstance(raw_cats, str):
             try: cat_ids_list = json.loads(raw_cats)
             except: cat_ids_list = raw_cats.replace('[','').replace(']','').replace('"','').split(',')
-        else: cat_ids_list = raw_cats
+        else: 
+            cat_ids_list = raw_cats
+            
         cat_ids = [int(c) for c in cat_ids_list if str(c).strip().isdigit()]
 
         is_bot = quiz_data.get("is_bot_quiz", False)
         table = "bot_questions" if is_bot else "questions"
         cat_col = "bot_category_id" if is_bot else "category_id"
         
+        # جلب الأسئلة من سوبابيس
         res_q = supabase.table(table).select("*, categories(name)" if not is_bot else "*").in_(cat_col, cat_ids).execute()
         
         if not res_q.data:
-            logging.error(f"⚠️ لم يتم العثور على أسئلة")
+            logging.error(f"⚠️ لم يتم العثور على أسئلة للقسم المحدد: {cat_ids}")
             return
 
         pool = res_q.data
@@ -4236,42 +4238,42 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
         selected_questions = pool[:count] 
         total_q = len(selected_questions)
 
-        # 🟢 [ الخطوة 1 ] إنشاء سجل المسابقة المركزي (Insert)
+        # 🟢 [ الخطوة 1: المشرف ] إنشاء سجل المسابقة المركزي في active_quizzes (الأب)
         try:
             quiz_entry = supabase.table("active_quizzes").insert({
                 "quiz_name": f"إذاعة {owner_name}",
                 "created_by": quiz_data.get('owner_id'), 
                 "is_global": True,
                 "is_active": True,
-                "participants_ids": [str(c) for c in chats_to_broadcast], 
                 "total_questions": total_q,
-                "category_name": selected_questions[0].get('category', 'عام')
+                "category_name": selected_questions[0].get('categories', {}).get('name', 'عام') if not is_bot else "بوت"
             }).execute()
             
             if quiz_entry.data:
                 current_quiz_db_id = quiz_entry.data[0]['id']
                 logging.info(f"✅ سجل active_quizzes جاهز ID: {current_quiz_db_id}")
 
-                # 🔥 [ الربط بالحبل السري ] 🔥
-                # هنا نعتمد على الجدول الذي أرسلته quiz_participants لربط المجموعات
+                # 🔥 [ الخطوة 2: المسجل ] الربط بجدول المشاركين (الحبل السري)
+                # تسجيل من انضم فعلياً في جدول quiz_participants لربط المجموعات بالـ ID
                 participants_records = [
                     {"quiz_id": current_quiz_db_id, "chat_id": cid} 
                     for cid in chats_to_broadcast
                 ]
                 supabase.table("quiz_participants").insert(participants_records).execute()
-                logging.info(f"🔗 تم تسجيل {len(chats_to_broadcast)} مجموعة في جدول المشاركين.")
+                logging.info(f"🔗 المسجل ربط {len(chats_to_broadcast)} مجموعة بالمسابقة {current_quiz_db_id}")
 
         except Exception as e:
-            logging.error(f"❌ خطأ سوبابيس في الربط: {e}")
+            logging.error(f"❌ خطأ سوبابيس في مرحلة التسجيل والربط: {e}")
+            return # التوقف لضمان عدم ضياع النتائج
 
         # --- [ د ] دورة البث الموحدة ---
         for i, q in enumerate(selected_questions):
-            answered_users_global[i + 1] = [] 
+            answered_users_global[i + 1] = [] # تصفير قائمة المجاوبين للسؤال الحالي
 
             ans = str(q.get('correct_answer') or q.get('answer_text') or "").strip()
-            cat_name = q.get('category') or q.get('section') or "عام"
+            cat_name = q.get('categories', {}).get('name', 'عام') if not is_bot else "بوت"
             
-            # 🔵 [ الخطوة 2 ] تحديث السجل المركزي للسؤال الحالي (Update)
+            # 🔵 [ الخطوة 3 ] تحديث المشرف (active_quizzes) ببيانات السؤال الحالي
             if current_quiz_db_id:
                 try:
                     supabase.table("active_quizzes").update({
@@ -4279,9 +4281,10 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
                         "current_index": i + 1,
                         "question_category_name": cat_name
                     }).eq("id", current_quiz_db_id).execute()
-                except: pass
+                except Exception as up_err:
+                    logging.error(f"⚠️ فشل تحديث السجل المركزي للسؤال {i+1}: {up_err}")
 
-            # تحديث الرادار المحلي لكل مجموعة مشاركة
+            # تحديث الرادار المحلي (الرام) لكل مجموعة مشاركة
             for cid in chats_to_broadcast:
                 active_quizzes[cid] = {
                     "active": True,
@@ -4299,6 +4302,20 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
             if is_hint_on:
                 ans_str = str(ans).strip()
                 normal_hint_str = f"مكونة من ({len(ans_str.split())}) كلمات، تبدأ بـ ( {ans_str[0]} )"
+                
+            # 4️⃣ [ بث السؤال للعالم ]
+            # إرسال السؤال فقط للمجموعات المسجلة رسمياً
+            send_tasks = [
+                send_quiz_question(cid, q, i+1, total_q, {
+                    'owner_name': owner_name,
+                    'mode': quiz_data.get('mode', 'السرعة ⚡'),
+                    'time_limit': int(quiz_data.get('time_limit', 15)),
+                    'cat_name': cat_name,
+                    'quiz_db_id': current_quiz_db_id,
+                    'is_public': True
+                }) for cid in chats_to_broadcast
+            ]
+            await asyncio.gather(*send_tasks, return_exceptions=True)
 
             # 4️⃣ بث السؤال (Multicast)
             send_tasks = [
@@ -4468,6 +4485,7 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
     finally:
         # 🔓 فتح القفل للسماح ببدء إذاعة جديدة
         for cid in all_chats: active_broadcasts.discard(cid)
+# =======================================
 # =======================================
 # --- [ بداية الدالة من العمود 0 لضمان عدم وجود SyntaxError ] ---
 import re
