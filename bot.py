@@ -1413,7 +1413,7 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         final_groups = [cid for cid in group_msgs if cid not in cancelled_groups]
         
         if final_groups:
-            # أ. تحديث الحالة البصرية للمجموعات المختارة (انطلقنا)
+            # أ. تحديث الحالة البصرية (انطلقنا)
             launch_tasks = [
                 bot.edit_message_text(
                     f"{base_info}\n\n🚀 **تـم الانـطـلاق الآن! استعدوا..**", 
@@ -1425,37 +1425,12 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
             await asyncio.gather(*launch_tasks, return_exceptions=True)
 
             # ب. ⚡ [ تشغيل المحرك العالمي فوراً ] ⚡
-            # الانطلاق بدون انتظار قاعدة البيانات لضمان السرعة
+            # نمرر final_groups والمحرك سيقوم بالباقي (إنشاء السجل + ربط المشاركين)
             asyncio.create_task(
-                engine_global_broadcast(final_groups, q, "الإذاعة العالمية 🌐", quiz_id)
+                engine_global_broadcast(final_groups, q_data, owner_name)
             )
-
-            # ج. 📝 [ تسجيل "الحبل السري" في سوبابيس ]
-            # يتم تسجيل المجموعات المشاركة فعلياً في جدول quiz_participants
-            try:
-                participant_data = [
-                    {"quiz_id": quiz_id, "chat_id": cid} 
-                    for cid in final_groups
-                ]
-                supabase.table("quiz_participants").insert(participant_data).execute()
-                logging.info(f"✅ تم ربط {len(final_groups)} مجموعة بجدول المشاركين للمسابقة {quiz_id}")
-            except Exception as db_err:
-                # الخطأ هنا لا يعطل البث لأنه بدأ فعلياً
-                logging.error(f"❌ خطأ تسجيل المشاركين في الخلفية: {db_err}")
-
-        else:
-            # إذا تم إلغاء المسابقة في كل المجموعات
-            await bot.send_message(owner_id, "⚠️ تم إلغاء المسابقة من جميع المجموعات المستهدفة.")
-
-        # 7. التنظيف النهائي (حذف رسائل الإعلان بعد بدء المسابقة)
-        # ننتظر قليلاً ثم نحذف الرسائل لكي لا تزدحم المجموعات
-        await asyncio.sleep(2)
-        for cid, mid in group_msgs.items():
-            try: await bot.delete_message(cid, mid)
-            except: pass
-
-    except Exception as e:
-        logging.error(f"🚨 General Broadcast Error: {e}")
+            logging.info(f"📡 تم استدعاء المحرك لـ {len(final_groups)} مجموعة.")
+        # تصفية المجموعات التي لم تضغط على زر الإلغاء
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 async def get_user_full_data(user_id: int):
