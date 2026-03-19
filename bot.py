@@ -1449,22 +1449,6 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
         logging.error(f"🚨 خطأ حرج في نظام الإذاعة الشامل: {e}")
         await bot.send_message(owner_id, f"❌ حدث خطأ تقني أثناء محاولة إطلاق الإذاعة: {e}")
         
-        # 🚀 [ الخطوة الجوهرية 6: الانطلاق الفوري والتسجيل ] 🚀
-
-# تصفية المجموعات التي لم تضغط على زر الإلغاء
-     except Exception as e:
-                logging.error(f"🚨 Error starting engine: {e}")
-                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
-
-        # 7. التنظيف النهائي لرسائل الإعلان لجميع المجموعات
-        for cid, mid in group_msgs.items():
-            try: 
-                await bot.delete_message(cid, mid)
-            except: 
-                pass
-    except Exception as e:
-        logging.error(f"🚨 General Broadcast Error: {e}")
-        
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 async def get_user_full_data(user_id: int):
     """جلب بيانات اللاعب من جدول users_global_profile"""
