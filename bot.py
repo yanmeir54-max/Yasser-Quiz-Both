@@ -1430,7 +1430,20 @@ async def start_broadcast_process(c: types.CallbackQuery, quiz_id: int, owner_id
                 engine_global_broadcast(final_groups, q_data, owner_name)
             )
             logging.info(f"📡 تم استدعاء المحرك لـ {len(final_groups)} مجموعة.")
-        # تصفية المجموعات التي لم تضغط على زر الإلغاء
+        
+# تصفية المجموعات التي لم تضغط على زر الإلغاء
+     except Exception as e:
+                logging.error(f"🚨 Error starting engine: {e}")
+                await bot.send_message(owner_id, f"🚨 حدث خطأ أثناء تشغيل المحرك: {e}")
+
+        # 7. التنظيف النهائي لرسائل الإعلان لجميع المجموعات
+        for cid, mid in group_msgs.items():
+            try: 
+                await bot.delete_message(cid, mid)
+            except: 
+                pass
+    except Exception as e:
+        logging.error(f"🚨 General Broadcast Error: {e}")
         
 # --- [ 1. الدوال الخدمية - الربط مع سوبابيس ] ---
 async def get_user_full_data(user_id: int):
