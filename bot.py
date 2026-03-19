@@ -4333,23 +4333,6 @@ async def engine_global_broadcast(chat_ids, quiz_data, owner_name, current_quiz_
             ]
             await asyncio.gather(*send_tasks, return_exceptions=True)
 
-            # 4️⃣ بث السؤال (Multicast)
-            send_tasks = [
-                send_quiz_question(cid, q, i+1, total_q, {
-                    'owner_name': owner_name,
-                    'mode': quiz_data.get('mode', 'السرعة ⚡'),
-                    'time_limit': quiz_data.get('time_limit', 15),
-                    'cat_name': cat_name,
-                    'smart_hint': is_hint_on,
-                    'normal_hint': normal_hint_str,
-                    'quiz_db_id': current_quiz_db_id, # تمرير الآيدي الموحد
-                    'is_public': True
-                }) for cid in chats_to_broadcast
-            ]
-            
-            # تنفيذ البث الجماعي (16 مسافة)
-            q_msgs = await asyncio.gather(*send_tasks, return_exceptions=True)
-
             for idx, m in enumerate(q_msgs):
                 if isinstance(m, types.Message):
                     messages_to_delete[all_chats[idx]].append(m.message_id)
