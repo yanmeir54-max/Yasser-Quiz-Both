@@ -4070,6 +4070,8 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         
         if isinstance(q_msg, types.Message):
             questions_to_delete.append(q_msg.message_id)
+            # تخزين معرف الرسالة في الرادار لاستخدامه في الإغلاق
+            active_quizzes[chat_id]['last_poll_id'] = q_msg.message_id
         
         # 4️⃣ مراقبة الوقت والتلميح
         start_time = time.time()
@@ -4091,6 +4093,22 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
                         logging.error(f"⚠️ خطأ في التلميح: {e}")
 
             await asyncio.sleep(0.5)
+
+        # 🛑 [ حماية @QuizBot: إغلاق الاستطلاع فوراً ومنع الإجابات المتأخرة ]
+        if chat_id in active_quizzes:
+            poll_id_to_stop = active_quizzes[chat_id].get('last_poll_id')
+            if poll_id_to_stop:
+                try:
+                    # إغلاق الاستطلاع في تليجرام
+                    await bot.stop_poll(chat_id=chat_id, message_id=poll_id_to_stop)
+                    
+                    # تحديث سوبابيس لإيقاف السؤال برمجياً
+                    if current_quiz_id:
+                        supabase.table("active_quizzes").update({
+                            "is_active": False 
+                        }).eq("id", current_quiz_id).execute()
+                except Exception as e:
+                    logging.warning(f"⚠️ لم يتم إغلاق الاستطلاع (قد يكون مغلقاً بالفعل): {e}")
 
         if h_msg:
             asyncio.create_task(delete_after(h_msg, 0))
@@ -4116,7 +4134,6 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             try:
                 countdown_msg = await bot.send_message(chat_id, f"⌛ استعدوا.. السؤال التالي يبدأ بعد 5 ثواني...")
                 
-                # التحديث كل ثانيتين (خطوات 4 ثم 2) لتقليل الضغط
                 for count in range(4, 0, -2): 
                     await asyncio.sleep(2)
                     icon = icons[count] if count < len(icons) else "⚪"
