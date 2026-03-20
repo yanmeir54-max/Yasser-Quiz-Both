@@ -3982,8 +3982,8 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "created_by": quiz_data.get('owner_id', 0),
             "is_global": (engine_type == "bot"),
             "is_active": True,
-            "category_name": main_cat
-            "quiz_type": "private", 
+            "category_name": main_cat,
+            "quiz_type": "private" 
         }).execute()
         
         if quiz_reg.data:
