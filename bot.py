@@ -254,14 +254,16 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         ans_words = correct_ans.split()
         q_norm = normalize_arabic(question_text)
 
-        # 1️⃣ [ مصفوفة الأنماط الموضوعية ] 🎯
-        # تحديد عائلة السؤال بدقة لضمان عدم الخلط
+        # 1️⃣ [ مصفوفة الموسوعة العالمية الشاملة ] 🌐
+        # تغطي كافة المجالات: علوم، تاريخ، جغرافيا، فنون، رياضة، أرقام
         patterns = {
-            'country': ['دوله', 'بلد', 'مملكه', 'جمهوريه'],
-            'city': ['عاصمه', 'مدينه', 'محافظه', 'ولايه'],
-            'person': ['من هو', 'الصحابي', 'الشاعر', 'الملك', 'الرئيس'],
-            'place': ['نهر', 'بحر', 'محيط', 'جبل', 'جزيره', 'خليج'],
-            'science': ['كوكب', 'عنصر', 'غاز', 'حيوان', 'طائر']
+            'history_dates': ['عام', 'سنه', 'تاريخ', 'قرن', 'ميلادي', 'هجري', 'معركه', 'غزوه', 'ثوره'],
+            'geography_world': ['دوله', 'بلد', 'عاصمه', 'مدينه', 'نهر', 'بحر', 'محيط', 'جبل', 'قاره', 'جزيره', 'خليج', 'مضيق'],
+            'science_tech': ['كوكب', 'عنصر', 'غاز', 'حيوان', 'طائر', 'نبات', 'جسم', 'خليه', 'جهاز', 'مخترع', 'اكتشف', 'فيزياء', 'كيمياء'],
+            'humanities': ['من هو', 'الصحابي', 'الشاعر', 'الملك', 'الرئيس', 'مؤلف', 'كاتب', 'فنان', 'رسام', 'فيلسوف'],
+            'sports_ent': ['لاعب', 'نادي', 'منتخب', 'بطوله', 'كاس', 'ملعب', 'هدف', 'اولمبياد', 'فيلم', 'مسلسل'],
+            'measurements': ['كم عدد', 'كم يبلغ', 'ما طول', 'ما وزن', 'نسبه', 'مسافه', 'سرعه', 'درجه'],
+            'islamic_world': ['سوره', 'آيه', 'نبي', 'رسول', 'تابعي', 'فقيه', 'كتاب', 'تفسير']
         }
         
         detected_pattern = None
@@ -270,37 +272,38 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 detected_pattern = key
                 break
 
-        # 2️⃣ [ نظام البحث السياقي ] 🔍
-        # إذا عرفنا أن السؤال عن "دولة"، نبحث فقط في إجابات الأسئلة التي تحتوي كلماتها على "دولة"
+        # 2️⃣ [ نظام الصيد الذكي بالسياق ] 🎯
         if detected_pattern:
             search_keywords = patterns[detected_pattern]
-            # بناء استعلام ديناميكي يبحث عن الكلمات المفتاحية للنمط في نص السؤال
-            query = supabase.table("bot_questions").select("correct_answer")
-            
-            # نستخدم OR للبحث عن أي كلمة من كلمات النمط في نص السؤال
+            # البحث عن أي سؤال في القاعدة العالمية ينتمي لنفس النمط
             or_filter = ",".join([f"question_content.ilike.%{w}%" for w in search_keywords])
-            res = query.or_(or_filter).limit(30).execute()
+            res = supabase.table("bot_questions").select("correct_answer") \
+                .or_(or_filter).limit(50).execute()
             
             if res.data:
                 potential_fakes = [str(r['correct_answer']).strip() for r in res.data]
-                # تصفية النتائج: استبعاد الإجابات الطويلة جداً أو القصيرة جداً مقارنة بالأصلية
+                # تصفية صارمة للخيارات لتبدو كأنها وضعت يدوياً
                 for opt in potential_fakes:
                     if normalize_arabic(opt) not in seen_norms:
-                        # شرط الطول التقاربي (يمنع خلط "مصر" مع "الجمهورية العربية السورية")
+                        # أ- حماية الأرقام: إذا كانت الإجابة رقماً، يجب أن يكون الوهمي رقماً
+                        if any(char.isdigit() for char in correct_ans) and not any(char.isdigit() for char in opt):
+                            continue
+                        
+                        # ب- تناسق الطول: فارق الحروف لا يتجاوز 10 لضمان الجمالية
                         if abs(len(opt) - len(correct_ans)) <= 10:
                             fakes.append(opt)
                             seen_norms.add(normalize_arabic(opt))
                 
                 if len(fakes) >= 3: return random.sample(fakes, 3)
 
-        # 3️⃣ [ نظام "الكلمة الأولى" المطور ] 🛑
-        # إذا فشل النمط، نبحث بالكلمة الأولى مع التأكد من أنها ليست "ال" التعريف فقط
+        # 3️⃣ [ نظام "الكلمة المفتاحية الأولى" ] 🔑
+        # يبحث عن إجابات تبدأ بنفس الكلمة (مثل: الملك، الشيخ، مدينة..)
         if len(ans_words) >= 1:
             first_word = ans_words[0]
-            if len(first_word) > 2: # نتجنب "من"، "في"، "ال"
+            if len(first_word) > 2:
                 res = supabase.table("bot_questions").select("correct_answer") \
                     .ilike("correct_answer", f"{first_word}%") \
-                    .limit(15).execute()
+                    .limit(20).execute()
                 
                 for r in res.data:
                     opt = str(r['correct_answer']).strip()
@@ -310,24 +313,23 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 
                 if len(fakes) >= 3: return random.sample(fakes, 3)
 
-        # 4️⃣ [ خطة الطوارئ: الفلترة بالقسم والطول ] 📂
+        # 4️⃣ [ محرك "الشكل البصري" للطوارئ ] 📂
+        # إذا لم يجد سياقاً، يبحث في القسم مع مراعاة عدد كلمات الإجابة
         if len(fakes) < 3:
             res = supabase.table("bot_questions").select("correct_answer") \
-                .eq("category", category_name).limit(20).execute()
+                .eq("category", category_name).limit(30).execute()
             
             for r in res.data:
                 opt = str(r['correct_answer']).strip()
                 if normalize_arabic(opt) not in seen_norms:
-                    # ميزة ذكية: التأكد من تقارب عدد الكلمات (كلمة مقابل كلمة، جملة مقابل جملة)
+                    # ميزة قوية: لو الإجابة كلمة، يجيب كلمة. لو جملة، يجيب جملة.
                     if len(opt.split()) == len(ans_words):
                         fakes.append(opt)
                         seen_norms.add(normalize_arabic(opt))
 
-        # 5️⃣ [ التعبئة النهائية ]
+        # 5️⃣ [ التغطية الشاملة النهائية ] 🏁
         if len(fakes) < 3:
-            # إذا بقي نقص، نسحب أي شيء من نفس القسم دون شروط معقدة
-            res = supabase.table("bot_questions").select("correct_answer") \
-                .eq("category", category_name).limit(5).execute()
+            res = supabase.table("bot_questions").select("correct_answer").limit(10).execute()
             for r in res.data:
                 if len(fakes) < 3 and normalize_arabic(r['correct_answer']) not in seen_norms:
                     fakes.append(r['correct_answer'])
@@ -335,7 +337,7 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
         return random.sample(fakes, min(len(fakes), 3))
 
     except Exception as e:
-        print(f"❌ خطأ في المحرك الذري المطور: {e}")
+        print(f"❌ خطأ في المحرك الموسوعي الخارق: {e}")
         return []
 # ==========================================
 # 6. دالة الإرسال النهائية (الهجين الذكي)
