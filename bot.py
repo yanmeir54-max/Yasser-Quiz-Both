@@ -4118,15 +4118,24 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             active_quizzes[chat_id]['active'] = False
             current_winners = active_quizzes[chat_id].get('winners', [])
             
+            # تسجيل النقاط في الذاكرة لضمان دقة النتائج النهائية
             for w in current_winners:
                 uid = w['id']
                 if uid not in overall_scores:
                     overall_scores[uid] = {"name": w['name'], "points": 0}
                 overall_scores[uid]['points'] += 1
         
-            res_msg = await send_creative_results2(chat_id, ans, current_winners, overall_scores)
-            if isinstance(res_msg, types.Message):
-                results_to_delete.append(res_msg.message_id)
+            # 🛑 التعديل الجوهري: منع القالب في نظام الاختيارات
+            current_style = active_quizzes[chat_id].get('quiz_style', '')
+            
+            # إذا لم يكن النظام "اختيارات 📊"، أرسل القالب المعتاد
+            if current_style != 'اختيارات 📊':
+                res_msg = await send_creative_results2(chat_id, ans, current_winners, overall_scores)
+                if isinstance(res_msg, types.Message):
+                    results_to_delete.append(res_msg.message_id)
+            else:
+                # في نظام الاختيارات، نكتفي بتسجيل الفوز بصمت في السجل
+                logging.info(f"✨ تم تخطي القالب لنظام الاختيارات في الدردشة {chat_id}")
                 
         # 6️⃣ [ ⏱️ محرك العداد التنازلي المطور لتجنب الـ Flood ]
         if i < len(questions) - 1:
