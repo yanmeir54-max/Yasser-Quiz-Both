@@ -4162,15 +4162,44 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         else:
             await asyncio.sleep(2)
 
-    # 7️⃣ إعلان لوحة الشرف النهائية
-    await send_final_results2(chat_id, overall_scores, len(questions))
+    # 7️⃣ إعلان لوحة الشرف النهائية (جلب البيانات من الجدول مباشرة) 📊
+    target_quiz_id = active_quizzes[chat_id].get('quiz_id')
+    final_scores_from_db = {}
+
+    if target_quiz_id:
+        try:
+            # جلب سجلات الإجابات الصحيحة لهذه المسابقة فقط من answers_log
+            response = supabase.table("answers_log") \
+                .select("user_id, user_name, points_earned") \
+                .eq("quiz_id", target_quiz_id) \
+                .eq("is_correct", True) \
+                .execute()
+
+            if response.data:
+                # تجميع النقاط لكل مستخدم (حساب المجموع)
+                for row in response.data:
+                    uid = row['user_id']
+                    if uid not in final_scores_from_db:
+                        final_scores_from_db[uid] = {"name": row['user_name'], "points": 0}
+                    final_scores_from_db[uid]['points'] += row['points_earned']
+                
+                logging.info(f"✅ تم استخراج نتائج {len(final_scores_from_db)} متسابق من answers_log")
+            else:
+                # إذا لم توجد بيانات في الجدول، نستخدم الذاكرة كخيار احتياطي (Fallback)
+                final_scores_from_db = overall_scores
+                logging.warning("⚠️ لا توجد بيانات في answers_log، تم استخدام overall_scores الاحتياطية.")
+        
+        except Exception as e:
+            logging.error(f"❌ فشل جلب النتائج من answers_log: {e}")
+            final_scores_from_db = overall_scores # استخدام الذاكرة في حال فشل الاتصال
+
+    # إرسال لوحة الشرف بناءً على البيانات المستخرجة من الجدول
+    await send_final_results2(chat_id, final_scores_from_db, len(questions))
 
     # 🚀 [ ترحيل البيانات للجدول العالمي ]
     try:
-        # جلب اسم القسم الفعلي (جغرافيا/تاريخ..) لضمان دقة الترحيل
         final_cat_name = active_quizzes[chat_id].get('category', "عام")
-        
-        data_to_sync = {"special_event": overall_scores}
+        data_to_sync = {"special_event": final_scores_from_db}
         
         await sync_points_to_global_db(
             group_scores=data_to_sync, 
@@ -4178,7 +4207,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             cat_name=final_cat_name, 
             is_special=True
         )
-        logging.info(f"✅ تم ترحيل نتائج {final_cat_name} للسجل العالمي بنجاح.")
+        logging.info(f"✅ تم ترحيل نتائج {final_cat_name} للسجل العالمي.")
     except Exception as e:
         logging.error(f"❌ فشل ترحيل البيانات: {e}")
 
@@ -4205,7 +4234,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
         del active_quizzes[chat_id]
             
     logging.info(f"✨ الساحة الآن نظيفة تماماً وجاهزة لمسابقة جديدة.")
-
+    
 # ==========================================
 # ==========================================
 
