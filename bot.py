@@ -3965,7 +3965,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
     random.shuffle(questions)
     overall_scores = {}
     
-    # 1️⃣ [ التسجيل الرسمي ] - المكان الوحيد للإدخال في سوبابيس
+    # 1️⃣ [ التسجيل الرسمي ] - إنشاء سجل المسابقة في سوبابيس وحجز ID
     current_quiz_id = None
     try:
         sample_q = questions[0]
@@ -3996,7 +3996,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
     results_to_delete = []
 
     for i, q in enumerate(questions):
-        # [أ] استخراج الإجابة والقسم
+        # [أ] استخراج الإجابة والقسم بناءً على نوع المحرك
         if engine_type == "bot":
             ans = str(q.get('correct_answer') or "").strip()
             cat_name = q.get('category') or "بوت"
@@ -4007,7 +4007,7 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             ans = str(q.get('correct_answer') or q.get('ans') or "").strip()
             cat_name = "مخصص 🔒"
 
-        # 2️⃣ تحديث الذاكرة النشطة (الرادار)
+        # 2️⃣ تحديث الذاكرة النشطة للبوت (الرادار المحلي)
         active_quizzes[chat_id] = {
             "active": True, 
             "ans": ans, 
@@ -4015,14 +4015,32 @@ async def run_universal_logic(chat_id, questions, quiz_data, owner_name, engine_
             "voted_users": [], 
             "mode": quiz_data['mode'], 
             "quiz_style": quiz_data.get('quiz_style', 'اختيارات 📊'),
-            "quiz_id": current_quiz_id, # آيدي المسابقة من سوبابيس
+            "quiz_id": current_quiz_id,
             "category": cat_name,
             "current_index": i + 1,
             "total_questions": len(questions),
-            # --- أضف السطرين التاليين ضروري جداً لربط الـ Poll ---
-            "raw_q_data": q,         # تخزين بيانات السؤال كاملة
-            "correct_ans": ans       # تأكيد نص الإجابة الصحيحة
+            "raw_q_data": q,
+            "correct_ans": ans
         }
+
+        # 3️⃣ [ التحديث اللحظي لقاعدة البيانات ] 🚀
+        # نقوم بمزامنة رقم السؤال والإجابة وتصفير بيانات التصويت للسؤال الجديد
+        if current_quiz_id:
+            try:
+                supabase.table("active_quizzes").update({
+                    "current_index": i + 1,
+                    "current_answer": ans,
+                    "question_category_name": cat_name,
+                    "is_active": True,
+                    "votes_results": {"0": 0, "1": 0, "2": 0, "3": 0},
+                    "voter_list": {},
+                    "user_choices": {}
+                }).eq("id", current_quiz_id).execute()
+                
+                logging.info(f"🔄 تم تحديث السؤال {i+1} في سوبابيس (ID: {current_quiz_id})")
+            except Exception as e:
+                logging.error(f"❌ فشل تحديث جدول active_quizzes: {e}")
+
         
         # --- [ نظام التلميح العادي المنفصل ] ---
         normal_hint_str = ""
