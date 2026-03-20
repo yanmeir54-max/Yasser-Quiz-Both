@@ -333,29 +333,42 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 detected_pattern = key
                 break
 
-        # 2️⃣ [ نظام الصيد الذكي بالسياق ] 🎯
+        # 2️⃣ [ نظام الصيد الذكي بالسياق - نسخة الفلترة الصارمة ] 🎯
         if detected_pattern:
             search_keywords = patterns[detected_pattern]
-            # البحث عن أي سؤال في القاعدة العالمية ينتمي لنفس النمط
-            or_filter = ",".join([f"question_content.ilike.%{w}%" for w in search_keywords])
-            res = supabase.table("bot_questions").select("correct_answer") \
-                .or_(or_filter).limit(50).execute()
+            
+            # --- [ ذكاء التحديد ] ---
+            # نبحث عن الكلمة الدقيقة التي حددت "نوع" السؤال (مثل: قارة، مدينة، كوكب)
+            # إذا وجدنا كلمة من المصفوفة موجودة فعلياً في السؤال، سنركز عليها فقط
+            specific_type = next((w for w in search_keywords if w in q_norm), None)
+            
+            query = supabase.table("bot_questions").select("correct_answer")
+            
+            if specific_type:
+                # قوة "الليزر": ابحث عن إجابات لأسئلة تحتوي على نفس الكلمة (مثلاً: القارة)
+                # هذا يضمن أن الخيارات ستكون (آسيا، أوروبا..) وليس (بحر، مدينة..)
+                res = query.ilike("question_content", f"%{specific_type}%").limit(50).execute()
+            else:
+                # إذا لم نجد كلمة نوعية، نعود للبحث العام بالنمط (خطة ب)
+                or_filter = ",".join([f"question_content.ilike.%{w}%" for w in search_keywords])
+                res = query.or_(or_filter).limit(50).execute()
             
             if res.data:
                 potential_fakes = [str(r['correct_answer']).strip() for r in res.data]
-                # تصفية صارمة للخيارات لتبدو كأنها وضعت يدوياً
+                
                 for opt in potential_fakes:
                     if normalize_arabic(opt) not in seen_norms:
-                        # أ- حماية الأرقام: إذا كانت الإجابة رقماً، يجب أن يكون الوهمي رقماً
+                        # أ- حماية الأرقام
                         if any(char.isdigit() for char in correct_ans) and not any(char.isdigit() for char in opt):
                             continue
                         
-                        # ب- تناسق الطول: فارق الحروف لا يتجاوز 10 لضمان الجمالية
-                        if abs(len(opt) - len(correct_ans)) <= 10:
+                        # ب- تناسق الطول (تم رفعه قليلاً لضمان مرونة أكبر في الأسماء الموسوعية)
+                        if abs(len(opt) - len(correct_ans)) <= 12:
                             fakes.append(opt)
                             seen_norms.add(normalize_arabic(opt))
                 
-                if len(fakes) >= 3: return random.sample(fakes, 3)
+                if len(fakes) >= 3: 
+                    return random.sample(fakes, 3)
 
         # 3️⃣ [ نظام "الكلمة المفتاحية الأولى" ] 🔑
         # يبحث عن إجابات تبدأ بنفس الكلمة (مثل: الملك، الشيخ، مدينة..)
