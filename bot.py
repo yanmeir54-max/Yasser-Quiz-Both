@@ -245,6 +245,7 @@ def normalize_arabic(text):
 # ==========================================
 # --- [ المحرك الخارق: الرادار الذكي والقوافي ] ---
 # ==========================================
+
 async def get_ultra_smart_options(question_text, category_name, correct_ans):
     try:
         norm_correct = normalize_arabic(correct_ans)
@@ -333,36 +334,30 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 detected_pattern = key
                 break
 
-        # 2️⃣ [ نظام الصيد الذكي بالسياق - نسخة الفلترة الصارمة ] 🎯
+        # 2️⃣ نظام الصيد بالليزر (Strict Type Logic)
         if detected_pattern:
             search_keywords = patterns[detected_pattern]
-            
-            # --- [ ذكاء التحديد ] ---
-            # نبحث عن الكلمة الدقيقة التي حددت "نوع" السؤال (مثل: قارة، مدينة، كوكب)
-            # إذا وجدنا كلمة من المصفوفة موجودة فعلياً في السؤال، سنركز عليها فقط
+            # ذكاء اصطناعي مصغر: استخراج الكلمة النوعية مع إزالة الـ التعريف
             specific_type = next((w for w in search_keywords if w in q_norm), None)
             
             query = supabase.table("bot_questions").select("correct_answer")
             
             if specific_type:
-                # قوة "الليزر": ابحث عن إجابات لأسئلة تحتوي على نفس الكلمة (مثلاً: القارة)
-                # هذا يضمن أن الخيارات ستكون (آسيا، أوروبا..) وليس (بحر، مدينة..)
-                res = query.ilike("question_content", f"%{specific_type}%").limit(50).execute()
+                # إزالة "ال" التعريف للبحث الشامل
+                clean_type = re.sub(r'^ال', '', specific_type)
+                res = query.ilike("question_content", f"%{clean_type}%").limit(60).execute()
             else:
-                # إذا لم نجد كلمة نوعية، نعود للبحث العام بالنمط (خطة ب)
                 or_filter = ",".join([f"question_content.ilike.%{w}%" for w in search_keywords])
-                res = query.or_(or_filter).limit(50).execute()
+                res = query.or_(or_filter).limit(60).execute()
             
             if res.data:
-                potential_fakes = [str(r['correct_answer']).strip() for r in res.data]
-                
-                for opt in potential_fakes:
+                for r in res.data:
+                    opt = str(r['correct_answer']).strip()
                     if normalize_arabic(opt) not in seen_norms:
-                        # أ- حماية الأرقام
+                        # حماية الأرقام
                         if any(char.isdigit() for char in correct_ans) and not any(char.isdigit() for char in opt):
                             continue
-                        
-                        # ب- تناسق الطول (تم رفعه قليلاً لضمان مرونة أكبر في الأسماء الموسوعية)
+                        # تناسق الطول
                         if abs(len(opt) - len(correct_ans)) <= 12:
                             fakes.append(opt)
                             seen_norms.add(normalize_arabic(opt))
@@ -370,13 +365,12 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 if len(fakes) >= 3: 
                     return random.sample(fakes, 3)
 
-        # 3️⃣ [ نظام "الكلمة المفتاحية الأولى" ] 🔑
-        # يبحث عن إجابات تبدأ بنفس الكلمة (مثل: الملك، الشيخ، مدينة..)
+        # 3️⃣ نظام "الكلمة الأولى" (البحث عن نفس العائلة اللفظية)
         if len(ans_words) >= 1:
-            first_word = ans_words[0]
+            first_word = re.sub(r'^ال', '', ans_words[0]) # إزالة ال التعريف من الإجابة أيضاً
             if len(first_word) > 2:
                 res = supabase.table("bot_questions").select("correct_answer") \
-                    .ilike("correct_answer", f"{first_word}%") \
+                    .ilike("correct_answer", f"%{first_word}%") \
                     .limit(20).execute()
                 
                 for r in res.data:
@@ -387,33 +381,28 @@ async def get_ultra_smart_options(question_text, category_name, correct_ans):
                 
                 if len(fakes) >= 3: return random.sample(fakes, 3)
 
-        # 4️⃣ [ محرك "الشكل البصري" للطوارئ ] 📂
-        # إذا لم يجد سياقاً، يبحث في القسم مع مراعاة عدد كلمات الإجابة
+        # 4️⃣ نظام "التطابق الشكلي" (لضمان وجود خيارات دائماً)
         if len(fakes) < 3:
+            # زيادة البحث في القسم ليشمل خيارات أكثر
             res = supabase.table("bot_questions").select("correct_answer") \
                 .eq("category", category_name).limit(50).execute()
             
             for r in res.data:
                 opt = str(r['correct_answer']).strip()
                 if normalize_arabic(opt) not in seen_norms:
-                    # ميزة قوية: لو الإجابة كلمة، يجيب كلمة. لو جملة، يجيب جملة.
+                    # تفضيل نفس عدد الكلمات
                     if len(opt.split()) == len(ans_words):
                         fakes.append(opt)
                         seen_norms.add(normalize_arabic(opt))
 
-        # 5️⃣ [ التغطية الشاملة النهائية ] 🏁
-        if len(fakes) < 3:
-            res = supabase.table("bot_questions").select("correct_answer").limit(10).execute()
-            for r in res.data:
-                if len(fakes) < 3 and normalize_arabic(r['correct_answer']) not in seen_norms:
-                    fakes.append(r['correct_answer'])
-
+        # 5️⃣ التغطية النهائية (Fallback Safe)
+        # نستخدم min لضمان عدم حدوث خطأ إذا كانت القائمة صغيرة
         return random.sample(fakes, min(len(fakes), 3))
 
     except Exception as e:
-        print(f"❌ خطأ في المحرك الموسوعي الخارق: {e}")
+        print(f"❌ خطأ في المحرك الموسوعي: {e}")
         return []
-
+      
 # ==========================================
 # 6. دالة الإرسال النهائية (الهجين الذكي)
 # ==========================================
